@@ -40,15 +40,15 @@ You're ready to start using LLAMA Steganography!
 
 To encode a message within a media file:
 
-'''shell
+```shell
 python encode.py --input input_media_file.jpg --output output_media_file.jpg --message "Your secret message goes here"
-'''
+```
 
 To decode a hidden message from a media file:
 
-'''shell
+```shell
 python decode.py --input encoded_media_file.jpg
-'''
+```
 
 For more advanced options and customization, consult the documentation or run the scripts with the --help flag.
 
