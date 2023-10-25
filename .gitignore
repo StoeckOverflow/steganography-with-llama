@@ -559,3 +559,6 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Llama Model
+*.gguf
