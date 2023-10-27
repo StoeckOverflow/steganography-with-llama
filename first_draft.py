@@ -54,7 +54,7 @@ def initialize_token_getter(llm: Llama) -> Callable:
 get_valid_token: Callable[[Llama], list[str]] = initialize_token_getter(llm)
 
 # Load secret and news
-with open("example_feed.json", "r") as f:
+with open("data/example_feed.json", "r") as f:
     infos = json.load(f)
 secret, feed = infos["secret"], infos["feed"]
 secret = secret[:5]
