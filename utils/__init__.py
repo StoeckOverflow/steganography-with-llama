@@ -36,6 +36,8 @@ def split_in_separators(txt, seps = None):
 def initialize_token_getter(llm: Llama) -> Callable:
     def _get_valid_token(prompt: str, bits_per_token: int = 3) -> str:
         next_token_probs = list(llm(prompt, top_p=0, max_tokens=1, logprobs=2**bits_per_token, temperature= 0, top_k=1)["choices"][0]["logprobs"]["top_logprobs"][0])
+        if bits_per_token > 3: # generate stop token
+            return next_token_probs
         for a,b in itertools.combinations(next_token_probs, 2):
             if a in b or b in a:
                 return [next_token_probs[0]]
