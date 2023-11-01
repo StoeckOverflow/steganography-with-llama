@@ -1,0 +1,10 @@
+from .hider import Hider
+from ..codecs.probability_order_codec import ProbabilityOrderCodec
+from llama_cpp import Llama
+from multiprocessing import cpu_count
+
+class ProbabilityOrderHider(Hider):
+    
+    def __init__(self, seed=None):
+        llm = Llama(model_path="resources/llama-2-7b.Q5_K_M.gguf", seed=seed, verbose=False, logits_all=True, n_threads=min(12, cpu_count()), use_mlock=True)
+        super().__init__(ProbabilityOrderCodec, llm)
