@@ -33,7 +33,7 @@ ENV PATH="/app/venv/bin:${PATH}"
 RUN pip install -r requirements.txt
 
 # Download LLM model
-RUN wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q5_K_M.gguf
+RUN wget -P /app/resources https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q5_K_M.gguf
 
 # Set the entry point to your Python script
 CMD [ "python3.11", "main.py" ]
