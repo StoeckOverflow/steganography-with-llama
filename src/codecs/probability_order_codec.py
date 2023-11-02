@@ -84,7 +84,7 @@ class ProbabilityOrderCodec(Codec):
                 
         return doctored_newsfeed + newsfeed[len(doctored_newsfeed):]
 
-    def decode_single_string(self, news_string: str, nr_prompt_words: int = 5, bits_per_token: int = 3) -> str:
+    def decode_single_string(self, news_string: str, nr_prompt_words: int = 5, bits_per_token: int = 3) -> tuple[str, bool]:
         """
         Decodes the binary_secret out of a single newsfeed string.
         
@@ -117,7 +117,7 @@ class ProbabilityOrderCodec(Codec):
                         If the next token does not belong to the top 2**bits_per_token
                         then we assume the whole message has been decoded.
                         """
-                        return decoded_message
+                        return decoded_message, True
                     # assert len(next_possible_tokens) == 1, f"{next_possible_tokens=} - {next_token_probs=} - {news_string[i:i+max_len_next_token]}" # Assert that we only have one candidate left
                     next_token = next_possible_tokens[0]
                     chosen_ind = next_token_probs.index(next_token)
@@ -134,12 +134,12 @@ class ProbabilityOrderCodec(Codec):
             pbar.n = i
             pbar.refresh()
 
-        return decoded_message, 
+        return decoded_message, False
     
     def decode_newsfeed(self, newsfeed: list[str], nr_prompt_words: int = 5, bits_per_token: int = 3) -> str:
         """
         Decodes the binary secret from a list of newsfeed strings.
-        TODO: Add a start and stop condition for the secret (maybe length or keywords encoded)
+        ToDo: Decoding into Text Message from bitstream
         Args:
             newsfeed (list[str]): A list of newsfeed strings.
             nr_prompt_words (int): The number of words used as the prompt for encoding.
@@ -148,10 +148,15 @@ class ProbabilityOrderCodec(Codec):
         Returns:
             str: The full encoded secret.
         """
-        encoded_secret = []
+        remaining_decoded_secret = []
         for news_string in newsfeed:
-            # Start Condition
-            binary_secret = self.decode_single_string(news_string, nr_prompt_words, bits_per_token)
-            encoded_secret.append(decode_secret(binary_secret))
-            # Stop Condition
-        return encoded_secret
+            binary_secret, decoded = self.decode_single_string(news_string, nr_prompt_words, bits_per_token)
+            
+            if decoded:
+                concatenated_binary_secret = ''.join(remaining_decoded_secret)
+                return concatenated_binary_secret
+            
+            remaining_decoded_secret.append(binary_secret)
+            
+        concatenated_binary_secret = ''.join(remaining_decoded_secret)
+        return decode_secret(concatenated_binary_secret)

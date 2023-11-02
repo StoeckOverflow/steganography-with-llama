@@ -1,4 +1,3 @@
-# Use a base image that already has Debian and some common dependencies
 FROM debian:bookworm
 
 # Set non-interactive environment variable to prevent prompts during installation
