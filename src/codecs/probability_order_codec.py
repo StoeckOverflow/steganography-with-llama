@@ -154,7 +154,7 @@ class ProbabilityOrderCodec(Codec):
             
             if decoded:
                 concatenated_binary_secret = ''.join(remaining_decoded_secret)
-                return concatenated_binary_secret
+                return decode_secret(concatenated_binary_secret)
             
             remaining_decoded_secret.append(binary_secret)
             
