@@ -9,9 +9,7 @@ def encode():
         secret, newsfeed = input_data["secret"], input_data["feed"]
 
         poh = ProbabilityOrderHider(seed=1337)
-        output_data = poh.hide_secret(newsfeed, secret)
-
-        json.dump(output_data, sys.stdout)
+        poh.hide_secret(newsfeed, secret, "stdout")
 
     except Exception as e:
         print("Error during encoding:", str(e), file=sys.stderr)
@@ -22,9 +20,7 @@ def decode():
         input_data = json.load(sys.stdin)
 
         poh = ProbabilityOrderHider(seed=1337)
-        revealed_secret = poh.reveal_secret(input_data)
-
-        json.dump({'secret': revealed_secret}, sys.stdout)
+        poh.reveal_secret(input_data, "stdout")
 
     except Exception as e:
         print("Error during decoding:", str(e), file=sys.stderr)
