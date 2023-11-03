@@ -153,6 +153,7 @@ class ProbabilityOrderCodec(Codec):
             binary_secret, decoded = self.decode_single_string(news_string, nr_prompt_words, bits_per_token)
             
             if decoded:
+                remaining_decoded_secret.append(binary_secret)
                 concatenated_binary_secret = ''.join(remaining_decoded_secret)
                 return decode_secret(concatenated_binary_secret)
             
