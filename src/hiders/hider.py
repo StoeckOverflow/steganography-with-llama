@@ -52,13 +52,13 @@ class Hider(ABC):
         if(output == "string"):
             return doctored_secret
         elif(output == "json"):
-            decoded_feed_json = {"secret": doctored_secret}
+            decoded_feed_json = {"secret": doctored_secret} if doctored_secret != None else {"secret": "Null"}
             return decoded_feed_json
-        elif(output == "stdout"):
-            decoded_feed_json = {"secret": doctored_secret}
+        elif(output == "stdout"):                
+            decoded_feed_json = {"secret": doctored_secret} if doctored_secret != None else {"secret": "Null"}
             json.dump(decoded_feed_json, sys.stdout)
             sys.stdout.flush()
         else:
-            decoded_feed_json = {"secret": doctored_secret}
+            decoded_feed_json = {"secret": doctored_secret} if doctored_secret != None else {"secret": "Null"}
             with open(output +".json", "w") as f:
                 json.dump(decoded_feed_json, f)

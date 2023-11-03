@@ -18,9 +18,9 @@ def encode():
 def decode():
     try:
         input_data = json.load(sys.stdin)
-
+        newsfeed = input_data["feed"]
         poh = ProbabilityOrderHider(seed=1337)
-        poh.reveal_secret(input_data, "stdout")
+        poh.reveal_secret(newsfeed, "stdout")
 
     except Exception as e:
         print("Error during decoding:", str(e), file=sys.stderr)
