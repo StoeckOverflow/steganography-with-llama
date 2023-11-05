@@ -84,7 +84,7 @@ class ArithmeticProbOrdHider:
         doctored_article: str = prompt
         for j, binary_secret in tqdm.tqdm(enumerate(binary_secrets), "Hidding message nr: ", disable=self.disable_tqdm):
             # Iterate until message is contained in article
-            for i, next_bits in tqdm.tqdm([(_i, binary_secret[_i:_i+bits_per_token]) for _i in range(0, len(binary_secret), bits_per_token)], "Message hidden: "):
+            for i, next_bits in tqdm.tqdm([(_i, binary_secret[_i:_i+bits_per_token]) for _i in range(0, len(binary_secret), bits_per_token)], "Message hidden: ", disable=self.disable_tqdm):
                 next_token_probs = self.get_valid_tokens(doctored_article, bits_per_token=bits_per_token)
                 chosen_ind = int(next_bits, 2)
                 next_token = next_token_probs[chosen_ind]
