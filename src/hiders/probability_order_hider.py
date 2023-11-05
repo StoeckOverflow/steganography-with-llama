@@ -6,5 +6,5 @@ from multiprocessing import cpu_count
 class ProbabilityOrderHider(Hider):
     
     def __init__(self, seed=None):
-        llm = Llama(model_path="resources/llama-2-7b.Q5_K_M.gguf", seed=seed, verbose=False, logits_all=True, n_threads=min(12, cpu_count()), use_mlock=True)
+        llm = Llama(model_path="resources/llama-2-7b.Q5_K_M.gguf", seed=seed, verbose=False, logits_all=True, n_threads=4, use_mlock=True)
         super().__init__(ProbabilityOrderCodec, llm)
