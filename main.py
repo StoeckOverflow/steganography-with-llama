@@ -1,30 +1,5 @@
-import sys
-import json
 import argparse
-from src.hiders.probability_order_hider import ProbabilityOrderHider
-
-def encode():
-    try:
-        input_data = json.load(sys.stdin)
-        secret, newsfeed = input_data["secret"], input_data["feed"]
-
-        poh = ProbabilityOrderHider(seed=1337)
-        poh.hide_secret(newsfeed, secret, "stdout")
-
-    except Exception as e:
-        print("Error during encoding:", str(e), file=sys.stderr)
-        raise e
-
-def decode():
-    try:
-        input_data = json.load(sys.stdin)
-        newsfeed = input_data["feed"]
-        poh = ProbabilityOrderHider(seed=1337)
-        poh.reveal_secret(newsfeed, "stdout")
-
-    except Exception as e:
-        print("Error during decoding:", str(e), file=sys.stderr)
-        raise e
+from src.models import DynamicPOE
 
 def main():
     parser = argparse.ArgumentParser(description="Encode or Decode secrets using ProbabilityOrderHider")
@@ -34,10 +9,12 @@ def main():
 
     args = parser.parse_args()
 
+    dpoe = DynamicPOE()
+
     if args.encode:
-        encode()
+        dpoe.hide_interface()
     elif args.decode:
-        decode()
+        dpoe.recover_interface()
 
 if __name__ == "__main__":
     main()
