@@ -13,7 +13,7 @@ def encode():
 
     except Exception as e:
         print("Error during encoding:", str(e), file=sys.stderr)
-        sys.exit(1)
+        raise e
 
 def decode():
     try:
@@ -24,7 +24,7 @@ def decode():
 
     except Exception as e:
         print("Error during decoding:", str(e), file=sys.stderr)
-        sys.exit(1)
+        raise e
 
 def main():
     parser = argparse.ArgumentParser(description="Encode or Decode secrets using ProbabilityOrderHider")
