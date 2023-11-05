@@ -21,7 +21,7 @@ class DynamicPOE:
             self.vocabulary = vocabulary
         llm = Llama(model_path=path_to_llm, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False)
         self.codec = DynamicArithmeticEncoding(frequency_table={char: 1 for char in vocabulary})
-        self.hider = ArithmeticProbOrdHider(llm, disable_tqdm=False)
+        self.hider = ArithmeticProbOrdHider(llm, disable_tqdm=True)
     
     @staticmethod
     def get_default_vocabulary() -> Iterable:
