@@ -24,6 +24,8 @@ ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
 
 RUN pip install llama_cpp_python
 # Base Image END
+# For submission use:
+# FROM stemo:llm
 
 COPY main.py .
 COPY requirements.txt .
@@ -33,4 +35,4 @@ RUN mv llama-2-7b.Q5_K_M.gguf /resources
 
 RUN ./venv/bin/pip install -r requirements.txt
 
-CMD ["python3", "main.py", "--encode"]
+CMD ["python3", "main.py", "--decode"]
