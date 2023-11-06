@@ -15,13 +15,13 @@ class DynamicPOE:
     """
     Combines a Dynamic Arithmetic Encoding Codec with it's hider.
     """
-    def __init__(self, vocabulary: Iterable = None, path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf"):
+    def __init__(self, vocabulary: Iterable = None, path_to_llm: str = "llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True):
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
             self.vocabulary = vocabulary
         llm = Llama(model_path=path_to_llm, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False)
         self.codec = DynamicArithmeticEncoding(frequency_table={char: 1 for char in vocabulary})
-        self.hider = ArithmeticProbOrdHider(llm, disable_tqdm=True)
+        self.hider = ArithmeticProbOrdHider(llm, disable_tqdm=disable_tqdm)
     
     @staticmethod
     def get_default_vocabulary() -> Iterable:
