@@ -2,6 +2,7 @@ from typing import Optional
 from collections import Counter
 from collections.abc import Iterable
 from decimal import Decimal, getcontext
+import sys
 
 import numpy as np
 
@@ -71,7 +72,9 @@ class DynamicArithmeticEncoding:
         probs_array = np.array(list(self.probability_table.values()))
         entropy = self.shannon_entropy(probs_array)
         min_amount_of_bits = int(entropy * len(msg) + (entropy * len(msg) % 1 > 0))
-        getcontext().prec = int(min_amount_of_bits/bits_per_decimal)
+        needed_digits = int(min_amount_of_bits/bits_per_decimal)
+        sys.set_int_max_str_digits(max(needed_digits + 1, sys.get_int_max_str_digits()))
+        getcontext().prec = needed_digits
 
     def encode(self, msg: str, bits_per_decimal: float = np.pi) -> tuple[Decimal, Decimal, Decimal]:
         """

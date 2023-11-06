@@ -28,7 +28,12 @@ class ArithmeticProbOrdHider:
     def initialize_token_getter(llm: Llama) -> Callable[[str, int, bool], list[str]]:
         def _get_valid_token(prompt: str, bits_per_token: int = 3, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> list[str]:
             nr_tokens_to_generate = 2**(bits_per_token + recursive_extra_tokens)
-            next_token_probs = list(llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1)["choices"][0]["logprobs"]["top_logprobs"][0])
+            try:
+                next_token_probs = list(llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1)["choices"][0]["logprobs"]["top_logprobs"][0])
+            except IndexError as err:
+                # TODO: Force Llama to keep generating, even though it wants to issue a stopping token.
+                print(f"{prompt=}\n{bits_per_token=}\n{get_end_condition=}")
+                raise err
             return_tokens = []
             for token in next_token_probs:
                 if ArithmeticProbOrdHider._token_is_usable(token, return_tokens):

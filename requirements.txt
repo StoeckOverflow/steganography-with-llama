@@ -1,5 +1,4 @@
 diskcache==5.6.3
-llama_cpp_python==0.2.11
 numpy==1.26.1
 tqdm==4.66.1
 typing==3.7.4.3
