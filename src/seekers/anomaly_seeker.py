@@ -59,27 +59,29 @@ def get_average_token_probability(llm, tokens):
 def grammar_check(tokens):
     pos_tags = nltk.pos_tag(tokens)
 
-    # Example how to use POS tags
-    def noun_verb_frequency(pos_tags):
-        pos_counts = Counter(tag for word, tag in pos_tags)
-        noun_freq = pos_counts['NN'] / length
-        verb_freq = pos_counts['VB'] / length
-        return noun_freq, verb_freq
-
-    # TODO: Implement grammar checks
     def check_subject_verb_agreement(pos_tags):
-        # Implement specific checks here
-        pass
+        for i in range(len(pos_tags) - 1):
+            if pos_tags[i][1] in ['NN', 'NNS'] and pos_tags[i+1][1] in ['VBZ', 'VBP']:
+                if pos_tags[i][1] == 'NN' and pos_tags[i+1][1] != 'VBZ':
+                    return False
+                if pos_tags[i][1] == 'NNS' and pos_tags[i+1][1] != 'VBP':
+                    return False
+        return True
+
+    # TODO: Implement more grammar checks
     # Function to check tense consistency
     def check_tense_consistency(pos_tags):
         # Implement specific checks here
         pass
+    # Function to check plural/singular agreement
     def check_plural_singular_agreement(pos_tags):
         # Implement specific checks here
         pass
+    # Function to check pronoun-antecedent agreement
     def check_pronoun_antecedent_agreement(pos_tags):
         # Implement specific checks here
         pass
+    # Function to check pronoun case
     def check_pronoun_case(pos_tags):
         # Implement specific checks here
         pass
@@ -144,8 +146,15 @@ def extract_features(articles):
         #lower_case_count = sum([1 for i in range(len(tokens)) if tokens[i-1] == '.' and tokens[i].islower()])
 
         # Average next token probability
-        #avg_token_prob = get_average_token_probability(llm, tokens)  # --> currently too slow
         avg_token_prob = 0.0
+        # Try to load from file, if not possible, calculate and save to file
+        #try: 
+        #    with open('resources/models/avg_token_prob.json', 'r') as f:
+        #        avg_token_prob = json.load(f)['avg_token_prob']
+        #except FileNotFoundError:
+        #    avg_token_prob = get_average_token_probability(llm, tokens)  # --> very slow
+        #    with open('resources/models/avg_token_prob.json', 'w') as f:
+        #        json.dump({'avg_token_prob': avg_token_prob}, f)
 
         # Collecting all features
         article_features = [length, num_special_chars, max_consecutive_special_chars, avg_token_prob]
