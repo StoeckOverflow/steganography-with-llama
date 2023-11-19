@@ -2,6 +2,7 @@ import zipfile
 import os
 import json
 import numpy as np
+from llama_cpp import Llama
 import nltk
 import spacy
 from spellchecker import SpellChecker
@@ -33,21 +34,42 @@ def clean(text):
     text = text.replace("-", " ")
     return text
 
-def extract_features(articles):
-    features = []
+def get_average_token_probability(llm, tokens):
+    token_probabilities = []
+    for token in tokens:
+        # Skip the first 5 tokens 
+        if tokens.index(token) < 5:
+            continue
+        # Take previous tokens as prompt to get probability of next token
+        prompt = ' '.join(tokens[:tokens.index(token)])
+        nr_tokens_to_generate = 1000
+        next_token_logprobs = llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1)['choices'][0]['logprobs']['top_logprobs'][0]
+        # Get probability of next token
+        try:
+            token_prob = np.exp(float(next_token_logprobs[token]))
+        except KeyError:
+            token_prob = 0.0
+        print(f"Prompt: {prompt}, Token: {token}, Probability: {token_prob}")
+        # Add probability to list
+        token_probabilities.append(token_prob)
+        print()
+    return np.mean(token_probabilities)
 
+def extract_features(articles):
+    llm = Llama(model_path='resources/llama-2-7b.Q5_K_M.gguf', logits_all=True, verbose=False)
+    features = []
     for article in articles:
         article = str(article)
-        tokens = nltk.word_tokenize(article)
+        tokens = nltk.word_tokenize(article) # TODO: use LLaMA tokenizer instead
 
         # Article length
         length = len(article)
 
         # Average sentence length
-        avg_sentence_length = np.mean([len(sentence) for sentence in nltk.sent_tokenize(article)])
+        #avg_sentence_length = np.mean([len(sentence) for sentence in nltk.sent_tokenize(article)])
 
         # Vocabulary richness
-        vocab_richness = len(set(tokens)) / length if length > 0 else 0
+        #vocab_richness = len(set(tokens)) / length if length > 0 else 0
 
         # Readability score
         #readability = flesch_reading_ease(article)
@@ -82,8 +104,14 @@ def extract_features(articles):
         # Max consecutive special characters
         max_consecutive_special_chars = max([len(list(g)) for k, g in groupby(article) if k in special_chars])
 
+        # Lower case count after sentence end
+        #lower_case_count = sum([1 for i in range(len(tokens)) if tokens[i-1] == '.' and tokens[i].islower()])
+
+        # Average next token probability
+        avg_token_prob = get_average_token_probability(llm, tokens)
+
         # Collecting all features
-        article_features = [length, avg_sentence_length, vocab_richness, noun_freq, verb_freq, num_special_chars, max_consecutive_special_chars]
+        article_features = [length, noun_freq, verb_freq, num_special_chars, max_consecutive_special_chars, avg_token_prob]
         features.append(article_features)
 
     scaler = StandardScaler()
@@ -108,6 +136,7 @@ def predict_single_feed(path):
     clf = joblib.load('resources/models/anomaly_detector.joblib')
     predictions = clf.predict(features)
     counts = Counter(predictions)
+    print(f"Counts: {counts}")
     if counts[1]/(counts[1]+counts[-1]) > 0.85:  # Set threshold for number of anomalies in newsfeed
         return 1
     else:
@@ -117,13 +146,13 @@ def main():
     training_data_path = 'resources/feeds/clean_feeds.zip'
     train_model(training_data_path)
 
-    benign_example = 'resources/feeds/example_feed.-1'
-    result = predict_single_feed(benign_example)
-    print(f"Prediction for benign example: {result}")
+    #benign_example = 'resources/feeds/example_feed.-1'
+    #result = predict_single_feed(benign_example)
+    #print(f"Prediction for benign example: {result}")
 
-    malicious_example = 'resources/feeds/example_feed.1'
-    result = predict_single_feed(malicious_example)
-    print(f"Prediction for malicious example: {result}")
+    #malicious_example = 'resources/feeds/example_feed.1'
+    #result = predict_single_feed(malicious_example)
+    #print(f"Prediction for malicious example: {result}")
 
 if __name__ == '__main__':
     main()
