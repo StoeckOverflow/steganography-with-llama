@@ -15,6 +15,7 @@ nltk.download('punkt', quiet=True)
 from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 import joblib
+from transformers import AutoTokenizer
 
 def load_data(archive_path):
     articles = []
@@ -55,12 +56,51 @@ def get_average_token_probability(llm, tokens):
         print()
     return np.mean(token_probabilities)
 
+def grammar_check(tokens):
+    pos_tags = nltk.pos_tag(tokens)
+
+    # Example how to use POS tags
+    def noun_verb_frequency(pos_tags):
+        pos_counts = Counter(tag for word, tag in pos_tags)
+        noun_freq = pos_counts['NN'] / length
+        verb_freq = pos_counts['VB'] / length
+        return noun_freq, verb_freq
+
+    # TODO: Implement grammar checks
+    def check_subject_verb_agreement(pos_tags):
+        # Implement specific checks here
+        pass
+    # Function to check tense consistency
+    def check_tense_consistency(pos_tags):
+        # Implement specific checks here
+        pass
+    def check_plural_singular_agreement(pos_tags):
+        # Implement specific checks here
+        pass
+    def check_pronoun_antecedent_agreement(pos_tags):
+        # Implement specific checks here
+        pass
+    def check_pronoun_case(pos_tags):
+        # Implement specific checks here
+        pass
+
+    sub_verb_agreement = check_subject_verb_agreement(pos_tags)
+    tense_consistency = check_tense_consistency(pos_tags)
+    plural_singular_agreement = check_plural_singular_agreement(pos_tags)
+    pronoun_antecedent_agreement = check_pronoun_antecedent_agreement(pos_tags)
+    pronoun_case = check_pronoun_case(pos_tags)
+
+    return sub_verb_agreement, tense_consistency, plural_singular_agreement, pronoun_antecedent_agreement, pronoun_case
+
 def extract_features(articles):
     llm = Llama(model_path='resources/llama-2-7b.Q5_K_M.gguf', logits_all=True, verbose=False)
     features = []
     for article in articles:
         article = str(article)
-        tokens = nltk.word_tokenize(article) # TODO: use LLaMA tokenizer instead
+        #tokens = nltk.word_tokenize(article) # TODO: use LLaMA tokenizer instead
+        tokenizer = AutoTokenizer.from_pretrained("stevhliu/my_awesome_model")
+        tokens = tokenizer.tokenize(article)
+        print(tokens)
 
         # Article length
         length = len(article)
@@ -83,12 +123,8 @@ def extract_features(articles):
         #print("\tText:", [(ent.text) for ent in doc.ents])
         #print("\tEntities:", [(ent.text, ent.label_) for ent in doc.ents])  # --> found this to be irrelevant
 
-        # POS (Parts of Speech) Tag Frequencies
-        pos_tags = nltk.pos_tag(tokens)
-        pos_counts = Counter(tag for word, tag in pos_tags)
-        noun_freq = pos_counts['NN'] / length
-        verb_freq = pos_counts['VB'] / length
-        # Maybe use POS Tags for grammar checks instead of frequency?
+        # Grammar Check 
+        sub_verb_agreement, tense_consistency, plural_singular_agreement, pronoun_antecedent_agreement, pronoun_case = grammar_check(tokens)
 
         # Spell Check (count of misspelled words)
         #spell = SpellChecker()
@@ -108,10 +144,11 @@ def extract_features(articles):
         #lower_case_count = sum([1 for i in range(len(tokens)) if tokens[i-1] == '.' and tokens[i].islower()])
 
         # Average next token probability
-        avg_token_prob = get_average_token_probability(llm, tokens)
+        #avg_token_prob = get_average_token_probability(llm, tokens)  # --> currently too slow
+        avg_token_prob = 0.0
 
         # Collecting all features
-        article_features = [length, noun_freq, verb_freq, num_special_chars, max_consecutive_special_chars, avg_token_prob]
+        article_features = [length, num_special_chars, max_consecutive_special_chars, avg_token_prob]
         features.append(article_features)
 
     scaler = StandardScaler()
