@@ -130,15 +130,7 @@ def get_ll(text):
     for i in range(len(tokenized_text)):
         base_model.eval(tokenized_text[:i+1])
         logits = base_model._scores[i, :].tolist()
-        
         log_probs = base_model.logits_to_logprobs(logits)
-        token_log_prob = log_probs[tokenized_text[i]]
-        log_likelihood += token_log_prob
-    
-        base_model.eval(tokenized_text)
-        logits = base_model._scores[-1, :].tolist()  # Assuming _scores stores the logits
-        log_probs = base_model.logits_to_logprobs(logits)
-        
         token_log_prob = log_probs[tokenized_text[i]]
         log_likelihood += token_log_prob
 
