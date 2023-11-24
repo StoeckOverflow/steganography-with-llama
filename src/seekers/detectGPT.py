@@ -11,12 +11,22 @@ import sys
 
 'Static Variables'
 DEVICE = 'cpu'
-local_model_path_to_t5_3B = 'resources/T5_3B'
-model_path = '/resources/llama-2-7b.Q5_K_M.gguf'
-base_model= Llama(model_path)
+local_model_path_to_t5_3B = 'resources/t5-3B'
+model_path = 'resources/llama-2-7b.Q5_K_M.gguf'
+print('Initializing base model')
+base_model = Llama(
+    model_path=model_path,
+    verbose=False,        # Set to True if you want more detailed logs
+    logits_all=True,      # If you want logits for all tokens; False if only for the last token
+    n_ctx=10000,           # Maximum context size (number of tokens) the model can handle
+    n_batch=512,          # Number of tokens to process in one batch
+    use_mlock=True        # Use mlock to prevent paging the model to disk (depends on your system's memory)
+)
 base_tokenizer= base_model.tokenizer()
-mask_model= T5ForConditionalGeneration.from_pretrained(local_model_path_to_t5_3B)
-mask_tokenizer= T5Tokenizer.from_pretrained(local_model_path_to_t5_3B)
+print('Initializing mask model')
+mask_model= T5ForConditionalGeneration.from_pretrained('t5-small')
+mask_tokenizer= T5Tokenizer.from_pretrained('t5-small')
+print('Mask model initialized')
 
 pattern = re.compile(r"<extra_id_\d+>")
 def tokenize_and_mask(text, span_length, pct, ceil_pct=False, buffer_size=1):
@@ -109,7 +119,6 @@ def perturb_texts_(texts, span_length=5, pct=0.3, ceil_pct=False):
         attempts += 1
         if attempts > 10:
             break
-    
 
     return perturbed_texts
 
@@ -123,13 +132,15 @@ def drop_last_word(text):
     return ' '.join(text.split(' ')[:-1])
 
 def get_ll(text):
-    tokenized_text = base_tokenizer.encode(text, add_bos=True, special=False)
-    
+    print('Entering log likelihood estimation method')
+    tokenized_text = base_tokenizer.encode(text)
     log_likelihood = 0.0
-
-    for i in range(len(tokenized_text)):
-        base_model.eval(tokenized_text[:i+1])
+    base_model.reset()
+    for i in tqdm.tqdm(range(len(tokenized_text)), desc='Estimate Log Probabilities for Tokens'):
+        current_input = tokenized_text[:i+1]
+        base_model.eval(current_input)
         logits = base_model._scores[i, :].tolist()
+        
         log_probs = base_model.logits_to_logprobs(logits)
         token_log_prob = log_probs[tokenized_text[i]]
         log_likelihood += token_log_prob
@@ -144,37 +155,35 @@ def run_DetectGPT_single_text(text, n_perturbations=5):
     np.random.seed(42)
 
     original_ll = get_ll(text)
-    perturbed_text = perturb_texts(text, n_perturbations)
+    perturbed_text = perturb_texts([text], n_perturbations)
     perturbed_ll = get_lls(perturbed_text)
 
-    mean_perturbed_ll = np.mean([i for i in perturbed_ll if not math.isnan(i)])
-    std_perturbed_ll = np.std([i for i in perturbed_ll if not math.isnan(i)]) if len([i for i in perturbed_ll if not math.isnan(i)]) > 1 else 1
+    mean_perturbed_ll = np.nanmean(perturbed_ll)
+    std_perturbed_ll = np.nanstd(perturbed_ll)
+
+    std_perturbed_ll = std_perturbed_ll if std_perturbed_ll > 0 else 1
 
     prediction_score = (original_ll - mean_perturbed_ll) / std_perturbed_ll
 
     return prediction_score
 
-def run_DetectGPT_feed(feed, n_perturbations=5, threshold = 0.2):
+def run_DetectGPT_feed(feed, n_perturbations=5, threshold=0.2):
     torch.manual_seed(42)
     np.random.seed(42)
-    prediction_scores = []
+    print("Start pertubing texts")
+    perturbed_texts = perturb_texts(feed, n_perturbations)
+    print("Start estimating likelihood for original feeds")
+    original_lls = get_lls(feed)
+    print("Start estimating likelihood for perturbed feeds")
+    perturbed_lls = get_lls(perturbed_texts)
 
-    perturb_fn = functools.partial(perturb_texts, n_perturbations=n_perturbations)
+    mean_perturbed_lls = np.nanmean(perturbed_lls, axis=1)
+    std_perturbed_lls = np.nanstd(perturbed_lls, axis=1)
 
-    for text in feed:
-        original_ll = get_ll(text)
-
-        perturbed_text = perturb_fn(text)
-        perturbed_ll = get_lls(perturbed_text)
-
-        mean_perturbed_ll = np.mean([i for i in perturbed_ll if not math.isnan(i)])
-        std_perturbed_ll = np.std([i for i in perturbed_ll if not math.isnan(i)]) if len([i for i in perturbed_ll if not math.isnan(i)]) > 1 else 1
-
-        prediction_score = (original_ll - mean_perturbed_ll) / std_perturbed_ll
-        prediction_scores.append(prediction_score)
-
+    prediction_scores = (original_lls - mean_perturbed_lls) / std_perturbed_lls
+    print('prediction scores: \n' + prediction_scores)
     decision = any(score > threshold for score in prediction_scores)
-
+    
     return {"result": decision}
 
 def calculate_prediction_scores(training_feeds, n_perturbations=5):
@@ -182,16 +191,18 @@ def calculate_prediction_scores(training_feeds, n_perturbations=5):
     perturb_fn = functools.partial(perturb_texts, n_perturbations=n_perturbations)
 
     for feed in training_feeds:
-        for text in feed:
-            original_ll = get_ll(text)
-            perturbed_text = perturb_fn(text)
-            perturbed_ll = get_lls(perturbed_text)
+        perturbed_texts = perturb_fn(feed)
+        original_lls = get_lls(feed)
+        perturbed_lls = get_lls(perturbed_texts)
 
-            mean_perturbed_ll = np.mean([i for i in perturbed_ll if not math.isnan(i)])
-            std_perturbed_ll = np.std([i for i in perturbed_ll if not math.isnan(i)]) if len([i for i in perturbed_ll if not math.isnan(i)]) > 1 else 1
+        mean_perturbed_lls = np.nanmean(perturbed_lls, axis=1)
+        std_perturbed_lls = np.nanstd(perturbed_lls, axis=1)
 
-            prediction_score = (original_ll - mean_perturbed_ll) / std_perturbed_ll
-            scores.append(prediction_score)
+        std_perturbed_lls[std_perturbed_lls == 0] = 1
+
+        prediction_scores = (original_lls - mean_perturbed_lls) / std_perturbed_lls
+
+        scores.extend(prediction_scores)
 
     return scores
 
@@ -206,7 +217,8 @@ def process_feeds_and_determine_threshold(feeds, n_perturbations=5, percentile=9
 if __name__ == "__main__":
     input_data = json.load(sys.stdin)
     feed = input_data["feed"]
-    #threshold = process_feeds_and_determine_threshold(feeds,, n_perturbations=5, percentile=95)
+    #threshold = process_feeds_and_determine_threshold(feeds, n_perturbations=5, percentile=95)
     #result = run_DetectGPT_feed(feed, threshold=threshold)
+    print("Start Detection for Input feed")
     result = run_DetectGPT_feed(feed)
     json.dump(result, sys.stdout)
