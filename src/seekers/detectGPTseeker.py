@@ -140,7 +140,7 @@ class detectGPTseeker(Seeker):
         np.random.seed(42)
         feed = [text for text in feed if len(text.split()) > 49 ]
         if len(feed) < 15:
-            return 694201337
+            return [694201337]
         
         perturbed_texts = self.perturb_texts(feed, n_perturbations)
 
@@ -186,7 +186,7 @@ class detectGPTseeker(Seeker):
         # Maybe useful to determine weather more articles in a row have negative scores
         
         prediction_scores = self.run_DetectGPT_feed(newsfeed)
-        if prediction_scores == 694201337:
+        if prediction_scores[0] == 694201337:
             decision = False
         else:
             decision = any(score < 0.2 for score in prediction_scores)
