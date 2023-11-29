@@ -187,7 +187,7 @@ class detectGPTseeker(Seeker):
         
         prediction_scores = self.run_DetectGPT_feed(newsfeed)
         if prediction_scores[0] == 694201337:
-            decision = False
+            decision = True
         else:
             decision = any(score < 0.2 for score in prediction_scores)
         
