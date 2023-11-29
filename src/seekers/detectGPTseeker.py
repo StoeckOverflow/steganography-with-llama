@@ -136,29 +136,24 @@ class detectGPTseeker(Seeker):
         return prediction_score
 
     def run_DetectGPT_feed(self, feed, n_perturbations=5):
-        start_time = time.time()
         torch.manual_seed(42)
         np.random.seed(42)
-        print("Start pertubing texts")
+        feed = [text for text in feed if len(text.split()) > 49 ]
+        if len(feed) < 15:
+            return 694201337
+        
         perturbed_texts = self.perturb_texts(feed, n_perturbations)
 
-        print("Start estimating likelihood for original feeds")
         original_lls = get_lls(self.base_model, feed, self.disable_tqdm)
         
-        print("Start estimating likelihood for perturbed feeds")
         perturbed_lls = get_lls(self.base_model, perturbed_texts, self.disable_tqdm)
         mean_perturbed_lls = np.mean([i for i in perturbed_lls if not math.isnan(i)])
-        print(f"Mean of perturbed lls: {mean_perturbed_lls}")
         
         std_perturbed_lls = np.std([i for i in perturbed_lls if not math.isnan(i)]) if (len([i for i in perturbed_lls if not (math.isnan(i) or 0)]) > 1) else 1
-        print(f"Standard deviation of perturbed lls: {std_perturbed_lls}")
 
         prediction_scores = (original_lls - mean_perturbed_lls) / std_perturbed_lls
         print(f"Prediction scores: \n+ {prediction_scores}")
         
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Execution Time: {execution_time/60}")
         return prediction_scores
 
     def calculate_prediction_scores(self, training_feed, n_perturbations=5):
@@ -191,11 +186,9 @@ class detectGPTseeker(Seeker):
         # Maybe useful to determine weather more articles in a row have negative scores
         
         prediction_scores = self.run_DetectGPT_feed(newsfeed)
-        print('Decision Statistics')
-        print(f"Count of negative values: {sum([value for value in prediction_scores if value < 0])}")
-        print(f"Count of positive values: {sum([value for value in prediction_scores if value > 0])}")
-        print(f"Sum of values: {sum(prediction_scores)}")
-        
-        decision = any(score < 0.2 for score in prediction_scores)
+        if prediction_scores == 694201337:
+            decision = False
+        else:
+            decision = any(score < 0.2 for score in prediction_scores)
         
         return decision
