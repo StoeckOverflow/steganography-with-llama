@@ -3,3 +3,6 @@ numpy==1.26.1
 tqdm==4.66.1
 typing==3.7.4.3
 typing_extensions==4.8.0
+transformers==4.35.2
+torch==2.1.1
+tokenizers==0.15.0
