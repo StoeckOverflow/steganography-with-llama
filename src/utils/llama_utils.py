@@ -114,10 +114,10 @@ def get_ll(llm: Llama, text: str):
 
     return log_likelihood
 
-def get_lls(texts: [str]):
+def get_lls(llm: Llama, texts: [str], disable_tqdm):
     lls = []
-    for text in tqdm.tqdm(texts, desc='Log Likelihood for Text Estimation'):
-        lls.append(get_ll(text))
+    for text in tqdm(texts, desc='Log Likelihood for Text Estimation', disable=disable_tqdm):
+        lls.append(get_ll(llm,text))
     return lls
 
 'Perplexity'

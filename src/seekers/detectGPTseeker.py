@@ -1,19 +1,17 @@
+from ..utils.llama_utils import get_ll, get_lls
+from .seeker import Seeker
+from transformers import T5Tokenizer, T5ForConditionalGeneration
 import numpy as np
 import re
-import tqdm
+from tqdm import tqdm
 import torch
 import math
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-import json
-import sys
 import time
-from seeker import Seeker
-from ..utils.llama_utils import get_ll, get_lls
 
 # TODO: Refine Decision function and thresholding, explanation Markdown, integration in seeker structure
 class detectGPTseeker(Seeker):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, disable_tqdm) -> None:
+        super().__init__(disable_tqdm)
         self.DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.mask_model = T5ForConditionalGeneration.from_pretrained('resources/t5-large', local_files_only=True).to(self.DEVICE)
         self.mask_tokenizer= T5Tokenizer.from_pretrained('resources/t5-large', local_files_only=True, legacy=False)
@@ -48,10 +46,9 @@ class detectGPTseeker(Seeker):
         text = ' '.join(tokens)
         return text
 
-    def count_masks(texts):
+    def count_masks(self, texts):
         return [len([x for x in text.split() if x.startswith("<extra_id_")]) for text in texts]
 
-    # Replace each masked span with a sample from T5 mask_model
     def replace_masks(self, texts, mask_top_p=1.0):
         n_expected = self.count_masks(texts)
         stop_id = self.mask_tokenizer.encode(f"<extra_id_{max(n_expected)}>")[0]
@@ -114,7 +111,7 @@ class detectGPTseeker(Seeker):
 
     def perturb_texts(self, texts, chunk_size=20, ceil_pct=False):
         outputs = []
-        for i in tqdm.tqdm(range(0, len(texts), chunk_size), desc="Applying perturbations"):
+        for i in tqdm(range(0, len(texts), chunk_size), desc="Applying perturbations", disable=self.disable_tqdm):
             outputs.extend(self.perturb_texts_(texts[i:i + chunk_size], ceil_pct=ceil_pct))
         return outputs
 
@@ -125,9 +122,9 @@ class detectGPTseeker(Seeker):
         torch.manual_seed(42)
         np.random.seed(42)
 
-        original_ll = get_ll(text)
+        original_ll = get_ll(self.base_model, text)
         perturbed_text = self.perturb_texts([text], n_perturbations)
-        perturbed_ll = get_lls(perturbed_text)
+        perturbed_ll = get_lls(self.base_model, perturbed_text, self.disable_tqdm)
 
         mean_perturbed_ll = np.nanmean(perturbed_ll)
         std_perturbed_ll = np.nanstd(perturbed_ll)
@@ -138,7 +135,7 @@ class detectGPTseeker(Seeker):
 
         return prediction_score
 
-    def run_DetectGPT_feed(self, feed, n_perturbations=1, threshold=0.3):
+    def run_DetectGPT_feed(self, feed, n_perturbations=5):
         start_time = time.time()
         torch.manual_seed(42)
         np.random.seed(42)
@@ -146,10 +143,10 @@ class detectGPTseeker(Seeker):
         perturbed_texts = self.perturb_texts(feed, n_perturbations)
 
         print("Start estimating likelihood for original feeds")
-        original_lls = get_lls(feed)
+        original_lls = get_lls(self.base_model, feed, self.disable_tqdm)
         
         print("Start estimating likelihood for perturbed feeds")
-        perturbed_lls = get_lls(perturbed_texts)
+        perturbed_lls = get_lls(self.base_model, perturbed_texts, self.disable_tqdm)
         mean_perturbed_lls = np.mean([i for i in perturbed_lls if not math.isnan(i)])
         print(f"Mean of perturbed lls: {mean_perturbed_lls}")
         
@@ -159,16 +156,10 @@ class detectGPTseeker(Seeker):
         prediction_scores = (original_lls - mean_perturbed_lls) / std_perturbed_lls
         print(f"Prediction scores: \n+ {prediction_scores}")
         
-        # summiere alle negativen elemente auf und summiere alle positiven elemente auf. Das mit dem höchsten betrag hat gewonnen.
-        print('Decision Statistics')
-        print(f"Count of negative values: {sum([value for value in prediction_scores if value < 0])}")
-        print(f"Count of positive values: {sum([value for value in prediction_scores if value > 0])}")
-        print(f"Sum of values: {sum(prediction_scores)}")
-        decision = any(score < threshold for score in prediction_scores)
         end_time = time.time()
         execution_time = end_time - start_time
         print(f"Execution Time: {execution_time/60}")
-        return {"result": decision}
+        return prediction_scores
 
     def calculate_prediction_scores(self, training_feed, n_perturbations=5):
         start_time = time.time()
@@ -177,9 +168,9 @@ class detectGPTseeker(Seeker):
         print("Start pertubing texts")
         perturbed_texts = self.perturb_texts(training_feed, n_perturbations)
         print("Start estimating likelihood for original feeds")
-        original_lls = get_lls(training_feed)
+        original_lls = get_lls(self.base_model, training_feed, self.disable_tqdm)
         print("Start estimating likelihood for perturbed feeds")
-        perturbed_lls = get_lls(perturbed_texts)
+        perturbed_lls = get_lls(self.base_model, perturbed_texts, self.disable_tqdm)
 
         mean_perturbed_lls = np.mean([i for i in perturbed_lls if not math.isnan(i)])
         print(f"Mean of perturbed lls: {mean_perturbed_lls}")
@@ -193,9 +184,18 @@ class detectGPTseeker(Seeker):
         print(f"Execution Time: {execution_time/60}")
         return prediction_scores
 
-if __name__ == "__main__":
-    input_data = json.load(sys.stdin)
-    feed = input_data["feed"]
-    #Positive scores = human-written, has stego |Negative scores = machine-written, has no stego
-    result = detectGPTseeker.run_DetectGPT_feed(feed)
-    json.dump(result, sys.stdout)
+    def detect_secret(self, newsfeed: list[str]) -> bool:
+        # Positive scores = human-written, likely a newspaper article
+        # Negative scores = machine-written, likely modified with stego
+        # Weighting of different articles maybe useful
+        # Maybe useful to determine weather more articles in a row have negative scores
+        
+        prediction_scores = self.run_DetectGPT_feed(newsfeed)
+        print('Decision Statistics')
+        print(f"Count of negative values: {sum([value for value in prediction_scores if value < 0])}")
+        print(f"Count of positive values: {sum([value for value in prediction_scores if value > 0])}")
+        print(f"Sum of values: {sum(prediction_scores)}")
+        
+        decision = any(score < 0.2 for score in prediction_scores)
+        
+        return decision

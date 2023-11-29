@@ -2,14 +2,14 @@ import math
 from collections import Counter
 import json
 from tqdm import tqdm
-from seeker import Seeker
+from .seeker import Seeker
 from ..utils.llama_utils import get_probabilities
 
 # TODO: RunTime Optimization and Decision Function with thresholding, Explanatation Markdown, Integration in seeker class
 class dnaGPTseekeer(Seeker):
     
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, disable_tqdm) -> None:
+        super().__init__(disable_tqdm)
     
     def split_input_and_contine(self, text, K=5):
         words = text.split()
@@ -69,7 +69,10 @@ class dnaGPTseekeer(Seeker):
         return En
 
     def relative_entropy_distance(self, x, y0_sequences, K):
-        'Relative Entropy Distance Calculation (W-Score)'
+        '''
+        Relative Entropy Distance Calculation (W-Score)
+        ATTENTION: Is not tested now
+        '''
 
         x_probs = get_probabilities(x)
         y0_sequences_probs = [get_probabilities(elem) for elem in y0_sequences]
@@ -93,7 +96,7 @@ class dnaGPTseekeer(Seeker):
     def calculate_blackbox_scoring_for_newsfeed(self, texts, k=5, distance_method='n-gram'):
         'Do black box scoring for all texts and return bool weather the text has stego or not'
         prediction_results = []
-        for text in tqdm(texts, desc=f"Evaluate {distance_method} score for texts"):
+        for text in tqdm(texts, desc=f"Evaluate {distance_method} score for texts", disable=self.disable_tqdm):
             y0, y0_sequences = self.split_input_and_contine(text,k)
             if distance_method == 'n-gram':
                 b_score, evidence = self.n_gram_distance(y0, y0_sequences, k), self.calculate_evidence(y0, y0_sequences)
@@ -110,9 +113,13 @@ class dnaGPTseekeer(Seeker):
         return prediction_results
     
     def detect_secret(self,newsfeed):
-        prediction_results = self.calculate_blackbox_scoring_for_newsfeed(newsfeed, distance_method='n-gram')
-        #Decision Logic still has to be implemented
-
+        prediction_scores = self.calculate_blackbox_scoring_for_newsfeed(newsfeed, distance_method='n-gram')
+        '''
+        For Black Box Method with ngram distance you can also measure the evidence, which serves as an additional score
+        If the evidence is very high, it is very likely the text is machine-written (contains stego)
+        '''
+        decision = decision = any((t[0] > 2 or t[1] > 2) for t in prediction_scores)
+        return decision
     
 if __name__ == "__main__":
     #input_data = json.load(sys.stdin)
@@ -123,8 +130,8 @@ if __name__ == "__main__":
     with open('resources/feeds/example_feed.-1') as file:
         input_data_2 = json.load(file)
     stego_feed = input_data_2['feed']
-    #print('Calculate BlackBox Scoring for benign feed')
-    #result = calculate_blackbox_scoring_for_newsfeed(benign_feed)
+    print('Calculate BlackBox Scoring for benign feed')
+    result = dnaGPTseekeer.calculate_blackbox_scoring_for_newsfeed(benign_feed)
     print('Calculate Blackbox Scoring for Stego feed')
     result = dnaGPTseekeer.alculate_blackbox_scoring_for_newsfeed(stego_feed)
     #json.dump(result, sys.stdout)
