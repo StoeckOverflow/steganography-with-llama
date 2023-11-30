@@ -4,13 +4,14 @@ import json
 from tqdm import tqdm
 from .seeker import Seeker
 from ..utils.llama_utils import get_probabilities
-
+from functools import lru_cache
 # TODO: RunTime Optimization and Decision Function with thresholding, Explanatation Markdown, Integration in seeker class
-class dnaGPTseekeer(Seeker):
+class dnaGPTseeker(Seeker):
     
     def __init__(self, disable_tqdm) -> None:
         super().__init__(disable_tqdm)
     
+    @lru_cache(maxsize=256)
     def split_input_and_contine(self, text, K=5):
         words = text.split()
         cut_off = len(words) // 2
@@ -19,7 +20,7 @@ class dnaGPTseekeer(Seeker):
         y0 = ' '.join(words[cut_off:])
         y0_sequences = []
         for i in range(K):
-            generated = self.base_model.create_completion(prompt=f"Describe this text in other words: {x}", max_tokens=cut_off)['choices'][0]['text']
+            generated = self.base_model.create_completion(prompt=x, max_tokens=cut_off)['choices'][0]['text']
             y0_sequences.append(generated)
 
         #For Debugging purposes:
