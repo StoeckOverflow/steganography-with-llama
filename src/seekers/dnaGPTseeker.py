@@ -4,14 +4,14 @@ import json
 from tqdm import tqdm
 from .seeker import Seeker
 from ..utils.llama_utils import get_probabilities
-from functools import lru_cache
+#from functools import lru_cache
 # TODO: RunTime Optimization and Decision Function with thresholding, Explanatation Markdown, Integration in seeker class
 class dnaGPTseeker(Seeker):
     
     def __init__(self, disable_tqdm) -> None:
         super().__init__(disable_tqdm)
     
-    @lru_cache(maxsize=256)
+    #@lru_cache(maxsize=512)
     def split_input_and_contine(self, text, K=5):
         words = text.split()
         cut_off = len(words) // 2
@@ -67,7 +67,7 @@ class dnaGPTseeker(Seeker):
             ngrams_Yk = set(self.ngrams(Yk, n))
             En |= ngrams_Yk & ngrams_y0
 
-        return En
+        return len(En)
 
     def relative_entropy_distance(self, x, y0_sequences, K):
         '''
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         input_data_2 = json.load(file)
     stego_feed = input_data_2['feed']
     print('Calculate BlackBox Scoring for benign feed')
-    result = dnaGPTseekeer.calculate_blackbox_scoring_for_newsfeed(benign_feed)
+    result = dnaGPTseeker.calculate_blackbox_scoring_for_newsfeed(benign_feed)
     print('Calculate Blackbox Scoring for Stego feed')
-    result = dnaGPTseekeer.alculate_blackbox_scoring_for_newsfeed(stego_feed)
+    result = dnaGPTseeker.alculate_blackbox_scoring_for_newsfeed(stego_feed)
     #json.dump(result, sys.stdout)
