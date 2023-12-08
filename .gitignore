@@ -568,3 +568,8 @@ FodyWeavers.xsd
 
 # Models
 *.joblib
+
+# Data
+*.json
+*.zip
+*.bin
