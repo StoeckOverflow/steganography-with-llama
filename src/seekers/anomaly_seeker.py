@@ -90,6 +90,7 @@ def extract_features(articles):
     return df
 
 def train_model(benign_data_path, malicious_data_path):
+    print('Training model...')
     dataset = create_dataset(benign_data_path, malicious_data_path)
     articles = dataset['article']
     labels = dataset['label']
@@ -107,6 +108,7 @@ def train_model(benign_data_path, malicious_data_path):
     joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
 
 def predict_single_feed(path):
+    print('Predicting news feed...')
     with open(path, 'r') as f:
         newsfeed = json.load(f)['feed']
     articles = [clean(article) for article in newsfeed]
