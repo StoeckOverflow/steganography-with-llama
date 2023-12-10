@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_score
 import os
 
 def load_data(archive_path):
@@ -177,9 +177,7 @@ def extract_features(articles):
                             entropy, sentiment, 
                             named_entities, 
                             repetition, 
-                            transition_words,
                             avg_token_probability,
-                            token_probability_variance
                             ]
         
         features.append(article_features)
@@ -196,9 +194,7 @@ def extract_features(articles):
                                                      'sentiment', 
                                                      'named_entities', 
                                                      'repetition', 
-                                                     'transition_words',
                                                      'avg_token_probability',
-                                                     'token_probability_variance'
                                                      ])
     return df
 
@@ -227,18 +223,13 @@ def train_model(benign_data_path, malicious_data_path):
     clf = clf.fit(X_train, y_train)
 
     y_pred = clf.predict(X_test)
+    print(f"Precision: {precision_score(y_test, y_pred)}")
     print(f"F1 Score: {f1_score(y_test, y_pred)}")
-    # Calculate False Positive Rate
-    FP = np.sum(np.logical_and(y_pred == 1, y_test == -1))
-    TN = np.sum(np.logical_and(y_pred == 1, y_test == 1))
-    FPR = FP / (FP + TN)
-    print(f"FPR: {FPR}")
     
     joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
 
-    return FPR
 
-def predict_single_feed(path, FPR=1/30):
+def predict_single_feed(path):
     print('Predicting news feed...')
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -254,7 +245,7 @@ def predict_single_feed(path, FPR=1/30):
     counts = Counter(predictions[:6])
     print('Predictions:', predictions)
 
-    if counts[-1] > 30 * FPR:
+    if counts[-1] >= 1:
         return -1
     else:
         return 1
@@ -262,18 +253,16 @@ def predict_single_feed(path, FPR=1/30):
 def main():
     #benign_data_path = 'resources/feeds/clean_feeds.zip'
     #malicious_data_path = 'resources/doctored_feeds/doctored_feeds.zip'
-    #FPR = train_model(benign_data_path, malicious_data_path)
-    FPR = 1/30
+    #train_model(benign_data_path, malicious_data_path)
 
     malicious_dir_path = 'resources/doctored_feeds/'
     for feed in os.listdir(malicious_dir_path):
         if feed.endswith('.zip'):
             continue
         feed_path = os.path.join(malicious_dir_path, feed)
-        result = predict_single_feed(feed_path, FPR)
+        result = predict_single_feed(feed_path)
         true_label = -1
         print(f"Prediction for {feed}: {result} ({result == true_label})")
-        print()
 
     benign_dir_path = 'resources/feeds/'
     for feed in os.listdir(benign_dir_path):
@@ -283,7 +272,6 @@ def main():
         result = predict_single_feed(feed_path)
         true_label = 1
         print(f"Prediction for {feed}: {result} ({result == true_label})")
-        print()
 
 if __name__ == '__main__':
     main()
