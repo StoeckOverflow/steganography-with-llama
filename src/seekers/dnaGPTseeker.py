@@ -2,13 +2,15 @@ import math
 from tqdm import tqdm
 from .seeker import Seeker
 from ..utils.llama_utils import get_probabilities
-# TODO: Remove Stopwords
+import re
+import numpy as np
+
 class dnaGPTseeker(Seeker):
     
     def __init__(self, disable_tqdm) -> None:
         super().__init__(disable_tqdm)
-    
-    def split_input_and_contine(self, text, K=5) -> tuple(str, [str]):
+
+    def split_input_and_contine(self, text, K=5):
         words = text.split()
         cut_off = len(words) // 2
 
@@ -16,7 +18,7 @@ class dnaGPTseeker(Seeker):
         y0 = ' '.join(words[cut_off:])
         y0_sequences = []
         for i in range(K):
-            generated = self.base_model.create_completion(prompt=x, max_tokens=cut_off, temperature=0.7)['choices'][0]['text']
+            generated = re.sub(r'[.,;!]','', self.base_model.create_completion(prompt=x, max_tokens=cut_off, temperature=0.7)['choices'][0]['text']).lower()
             y0_sequences.append(generated)
 
         #For Debugging purposes:
@@ -24,7 +26,7 @@ class dnaGPTseeker(Seeker):
         #for elem in y0_sequences:
         #    print(elem + '\n')
     
-        return y0, y0_sequences
+        return y0.lower(), y0_sequences
 
     def ngrams(self,sequence, n) -> [str]:
         """Generate n-grams from a sequence."""
@@ -47,11 +49,6 @@ class dnaGPTseeker(Seeker):
                     if len(y_0_grams) != 0:
                         y_k_grams = set(self.ngrams(model_output, n))
                         intersection = set.intersection(y_0_grams, y_k_grams)
-                        print(y_0_grams)
-                        print(y_k_grams)
-                        print(intersection)
-                        print(str(type(intersection)))
-                        print(len(intersection))
                         f_n = n * math.log(n)
                         term = len(intersection) / (len(model_output) * len(y_0_grams))
                         score_sum += term * f_n
@@ -70,14 +67,13 @@ class dnaGPTseeker(Seeker):
 
         return len(En)
 
-    def relative_entropy_distance(self, x, y0_sequences, K) -> float:
+    def relative_entropy_distance(self, y0, y0_sequences, K=5) -> float:
         '''
         Relative Entropy Distance Calculation (W-Score)
         ATTENTION: Is not tested now
         '''
-
-        x_probs = get_probabilities(x)
-        y0_sequences_probs = [get_probabilities(elem) for elem in y0_sequences]
+        x_probs = get_probabilities(self.base_model, y0)
+        y0_sequences_probs = [get_probabilities(self.base_model, elem) for elem in y0_sequences]
         score_sum = 0
 
         for k in range(K):
@@ -87,21 +83,21 @@ class dnaGPTseeker(Seeker):
                 p_y = y0_sequences_probs[k][i]
 
                 # Avoid log(0) by adding a small constant if necessary
-                p_x = max(p_x, 1e-10)
-                p_y = max(p_y, 1e-10)
-
-                score_sum += p_x * math.log(p_x / p_y)
+                p_x = np.maximum(p_x, 1e-10)
+                p_y = np.maximum(p_y, 1e-10)
 
         return score_sum / (K * min_length)
 
-
-    def calculate_blackbox_scoring_for_newsfeed(self, texts, k=5, distance_method='n-gram') -> [bool]:
-        'Do black box scoring for all texts and return bool weather the text has stego or not'
+    def calculate_scoring_for_newsfeed(self, texts, k=5, distance_method='n-gram') -> [bool]:
+        'Do scoring for all texts and return bool weather the text has stego or not'
         prediction_results = []
         for text in tqdm(texts, desc=f"Evaluate {distance_method} score for texts", disable=self.disable_tqdm):
             y0, y0_sequences = self.split_input_and_contine(text,k)
             if distance_method == 'n-gram':
-                n_gram_evaluation = self.n_gram_distance(y0, y0_sequences, k) > self.calculate_evidence(y0, y0_sequences)
+                b_score = self.n_gram_distance(y0, y0_sequences, k)
+                evidence = self.calculate_evidence(y0, y0_sequences)
+                n_gram_evaluation = b_score > evidence
+                print(f"{b_score} > {evidence} = {n_gram_evaluation}")
                 prediction_results.append(n_gram_evaluation)
             elif distance_method == 'entropy':
                 entropy_distance_evaluation = self.relative_entropy_distance(y0, y0_sequences) > self.calculate_evidence(y0, y0_sequences)
@@ -111,4 +107,4 @@ class dnaGPTseeker(Seeker):
         return prediction_results
     
     def detect_secret(self,newsfeed) -> bool:
-        return True in self.calculate_blackbox_scoring_for_newsfeed(newsfeed)
+        return True if any(True for prediction in self.calculate_scoring_for_newsfeed(newsfeed, distance_method='entropy')) else False
