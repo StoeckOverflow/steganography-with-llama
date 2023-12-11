@@ -1,12 +1,10 @@
-import zipfile
+from utils import *
+from features import *
 from tqdm import tqdm
 import json
 import numpy as np
 from llama_cpp import Llama
-from textblob import TextBlob
-import spacy
 from collections import Counter
-from itertools import groupby
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 import joblib
@@ -14,108 +12,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score
 import os
-
-def load_data(archive_path):
-    articles = []
-    with zipfile.ZipFile(archive_path, 'r') as zip_archive:
-        for newsfeed_json in zip_archive.namelist():
-            with zip_archive.open(newsfeed_json) as newsfeed_file:
-                newsfeed = json.load(newsfeed_file)['feed']
-                for article in newsfeed:
-                    article = clean(article)
-                    articles.append(article)
-    return np.array(articles)
-
-def clean(text):
-    text = text.replace("\n", " ")
-    text = text.replace("\t", " ")
-    text = text.replace("\r", " ")
-    text = text.replace("-", " ")
-    return text
-
-def create_dataset(dir_path_benign, dir_path_malicious):
-    benign_articles = load_data(dir_path_benign)
-    benign_labels = np.ones(len(benign_articles))
-    malicious_articles = load_data(dir_path_malicious)
-    malicious_labels = np.ones(len(malicious_articles)) * -1
-
-    df_benign = pd.DataFrame({'article': benign_articles, 'label': benign_labels})
-    df_malicious = pd.DataFrame({'article': malicious_articles, 'label': malicious_labels})
-    df = pd.concat([df_benign, df_malicious])
-    return df
-
-def flesch_reading_ease(article):
-    words = article.split()
-    num_words = len(words)
-    num_sentences = article.count('. ') + article.count('! ') + article.count('? ')
-    num_syllables = 0
-    for word in words:
-        if word:  # Ensure the word is not empty
-            syllables = count_syllables(word)
-            num_syllables += syllables
-    if num_words > 0 and num_sentences > 0:
-        flesch_score = 206.835 - 1.015 * (num_words / num_sentences) - 84.6 * (num_syllables / num_words) # Formula for Flesch-Kincaid reading ease
-        return flesch_score
-    else:
-        return 0
-
-def count_syllables(word):
-    if not word or not word.strip(): 
-        return 0
-
-    vowels = 'aeiouy'
-    num_syllables = 0
-    word = word.lower().strip(".:;?!")
-    
-    if len(word) > 0 and word[0] in vowels:
-        num_syllables += 1
-    for index in range(1, len(word)):
-        if word[index] in vowels and word[index - 1] not in vowels:
-            num_syllables += 1
-    if word.endswith('e'):
-        num_syllables -= 1
-    if word.endswith('le') and len(word) > 2 and word[-3] not in vowels:
-        num_syllables += 1
-    if num_syllables == 0:
-        num_syllables = 1
-    return num_syllables
-
-def shannon_entropy(article):
-    prob = [float(article.count(c)) / len(article) for c in dict.fromkeys(list(article))]
-    entropy = -sum([p * np.log2(p) for p in prob])
-    return entropy
-
-def softmax(x):
-    e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum()
-
-def special_chars_count(article):
-    special_chars = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '_', '+', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '"', "'", '<', '>', ',', '.', '?']
-    return sum([article.count(char) for char in special_chars])
-
-def sentiment_consistency(article):
-    sentences = article.split('. ')
-    sentiments = [TextBlob(sentence).sentiment.polarity for sentence in sentences]
-    variance = np.var(sentiments)
-    return variance
-
-def named_entity_analysis(article, nlp=spacy.load("en_core_web_sm")):
-    doc = nlp(article)
-    entities = set([ent.text for ent in doc.ents])
-    return len(entities)
-
-def repetition_patterns(article, n=3):
-    tokens = article.split()
-    ngrams = zip(*[tokens[i:] for i in range(n)])
-    freq = Counter(ngrams)
-    # Count n-grams that appear more than once
-    repetitions = sum(1 for item in freq.values() if item > 1)
-    return repetitions
-
-def count_transition_words(article):
-    transition_words = ['however', 'furthermore', 'therefore', 'consequently', 'meanwhile', 'nonetheless', 'moreover', 'likewise', 'instead', 'nevertheless', 'otherwise', 'similarly', 'accordingly', 'subsequently', 'hence', 'thus', 'still', 'then', 'yet', 'accordingly', 'additionally', 'alternatively', 'besides', 'comparatively', 'conversely', 'finally', 'further', 'furthermore', 'hence', 'however', 'indeed', 'instead', 'likewise', 'meanwhile', 'moreover', 'nevertheless', 'next', 'nonetheless', 'otherwise', 'similarly', 'still', 'subsequently', 'then', 'therefore', 'thus', 'whereas', 'while', 'yet'] 
-    count = sum(article.count(word) for word in transition_words)
-    return count
 
 def extract_features(articles):
     llm = Llama(model_path='resources/llama-2-7b.Q5_K_M.gguf', logits_all=True, verbose=False)
@@ -156,7 +52,7 @@ def extract_features(articles):
         repetition = repetition_patterns(article)
 
         # Transition words
-        transition_words = count_transition_words(article)
+        #transition_words = count_transition_words(article)
 
         # Average token probability
         llm.reset()
@@ -166,7 +62,7 @@ def extract_features(articles):
         avg_token_probability = np.mean(token_probabilities)
 
         # Token probability variance
-        token_probability_variance = np.var(token_probabilities)
+        #token_probability_variance = np.var(token_probabilities)
 
         # Collecting all features
         article_features = [length, avg_sentence_length, 
