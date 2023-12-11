@@ -22,11 +22,11 @@ class Anomaly_Seeker(Seeker):
         super().__init__(disable_tqdm)
 
     def extract_features(self,articles):
-        llm = Llama(model_path='resources/llama-2-7b.Q5_K_M.gguf', logits_all=True, verbose=False)
+        #llm = Llama(model_path='resources/llama-2-7b.Q5_K_M.gguf', logits_all=True, verbose=False)
         features = []
         for article in tqdm(articles, desc='Extracting features', disable=self.disable_tqdm):
             article = str(article)
-            tokens = llm.tokenizer().encode(article)
+            tokens = self.base_model.tokenizer().encode(article)
 
             # Article length
             length = len(article)
@@ -63,9 +63,9 @@ class Anomaly_Seeker(Seeker):
             #transition_words = count_transition_words(article)
 
             # Average token probability
-            llm.reset()
-            llm.eval(tokens)
-            logits = np.array(llm._scores)
+            self.base_model.reset()
+            self.base_model.eval(tokens)
+            logits = np.array(self.base_model._scores)
             token_probabilities = softmax(logits)
             avg_token_probability = np.mean(token_probabilities)
 
