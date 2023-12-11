@@ -13,7 +13,10 @@ class Seeker(ABC):
             logits_all=True,      
             n_ctx=512,            # Maximum context size (number of tokens) the model can handle
             n_batch=512,          # Number of tokens to process in one batch
-            use_mlock=True        # Use mlock to prevent paging the model to disk (depends on your system's memory)
+            n_threads=3,          # Number of threads llama operations can be processed
+            n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
+            use_mlock=True,        # Use mlock to prevent paging the model to disk (depends on your system's memory)
+            embedding=True
         )
         self.disable_tqdm = disable_tqdm
     

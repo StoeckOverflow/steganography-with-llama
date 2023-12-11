@@ -1,4 +1,4 @@
-from ..utils.llama_utils import get_ll, get_lls
+from ..utils.llama_utils import get_ll, get_lls, compute_embeddings_llama
 from .seeker import Seeker
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 import numpy as np
@@ -7,17 +7,18 @@ from tqdm import tqdm
 import torch
 import math
 import time
+from sklearn.metrics.pairwise import cosine_similarity
 
-# TODO: Refine Decision function and thresholding, explanation Markdown, integration in seeker structure
 class detectGPTseeker(Seeker):
+
     def __init__(self, disable_tqdm) -> None:
         super().__init__(disable_tqdm)
         self.DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.mask_model = T5ForConditionalGeneration.from_pretrained('resources/t5-large', local_files_only=True).to(self.DEVICE)
-        self.mask_tokenizer= T5Tokenizer.from_pretrained('resources/t5-large', local_files_only=True, legacy=False)
+        #self.mask_model = T5ForConditionalGeneration.from_pretrained('resources/t5-large', local_files_only=True).to(self.DEVICE)
+        #self.mask_tokenizer= T5Tokenizer.from_pretrained('resources/t5-large', local_files_only=True, legacy=False)
         self.pattern = re.compile(r"<extra_id_\d+>")
         
-    def tokenize_and_mask(self, text, span_length, pct, ceil_pct=False, buffer_size=1):
+    def tokenize_and_mask(self, text, span_length, pct, ceil_pct=False, buffer_size=1) -> str:
         tokens = text.split(' ')
         mask_string = '<<<mask>>>'
 
@@ -46,17 +47,35 @@ class detectGPTseeker(Seeker):
         text = ' '.join(tokens)
         return text
 
-    def count_masks(self, texts):
+    def count_masks(self, texts) -> [int]:
         return [len([x for x in text.split() if x.startswith("<extra_id_")]) for text in texts]
 
-    def replace_masks(self, texts, mask_top_p=1.0):
+    def replace_masks(self, texts, mask_top_p=1.0) -> [str]:
         n_expected = self.count_masks(texts)
-        stop_id = self.mask_tokenizer.encode(f"<extra_id_{max(n_expected)}>")[0]
+        stop_id = self.mask_tokenizer.encode(f"<extra_id_{max(n_expected)}>")
         tokens = self.mask_tokenizer(texts, return_tensors="pt", padding=True).to(self.DEVICE)
         outputs = self.mask_model.generate(**tokens, max_length=150, do_sample=True, top_p=mask_top_p, num_return_sequences=1, eos_token_id=stop_id)# outputs.shape: torch.Size([20, 57])
-        return self.mask_tokenizer.batch_decode(outputs, skip_special_tokens=False)
+        test =  self.mask_tokenizer.batch_decode(outputs, skip_special_tokens=False)
+        return test
+    
+    def replace_masks_llama_cpp(self, texts) -> [str]:
+        for i in range(len(texts)):
+            text = texts[i]
+            output_text = ""
+            j=0
 
-    def apply_extracted_fills(self, masked_texts, extracted_fills):
+            for match in self.pattern.finditer(text):
+                before_id = text[:match.start()]
+                after_id = text[match.end():]
+                generated_text = self.base_model(prompt=before_id, suffix=after_id, stop='.', max_tokens=5)['choices'][0]['text']
+                output_text += generated_text if j > 0 else before_id + generated_text
+                j+=1
+
+            texts[i] = output_text
+
+        return texts
+
+    def apply_extracted_fills(self, masked_texts, extracted_fills) -> [str]:
         # split masked text into tokens, only splitting on spaces (not newlines)
         tokens = [x.split(' ') for x in masked_texts]
 
@@ -74,7 +93,7 @@ class detectGPTseeker(Seeker):
         texts = [" ".join(x) for x in tokens]
         return texts
 
-    def extract_fills(self, texts):
+    def extract_fills(self, texts) -> [[str]]:
         # remove <pad> from beginning of each text
         texts = [x.replace("<pad>", "").replace("</s>", "").strip() for x in texts]
 
@@ -86,9 +105,9 @@ class detectGPTseeker(Seeker):
 
         return extracted_fills
 
-    def perturb_texts_(self, texts, span_length=5, pct=0.3, ceil_pct=False):
+    def perturb_texts_(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> [str]:
         masked_texts = [self.tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
-        raw_fills = self.replace_masks(masked_texts)
+        raw_fills = self.replace_masks_llama_cpp(masked_texts)
         extracted_fills = self.extract_fills(raw_fills)
         perturbed_texts = self.apply_extracted_fills(masked_texts, extracted_fills)
 
@@ -108,17 +127,22 @@ class detectGPTseeker(Seeker):
                 break
 
         return perturbed_texts
+    
+    def perturb_texts_llama_cpp(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> [str]:
+        masked_texts = [self.tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
+        perturbed_texts = self.replace_masks_llama_cpp(masked_texts)
+        return perturbed_texts
 
-    def perturb_texts(self, texts, chunk_size=20, ceil_pct=False):
+    def perturb_texts(self, texts, chunk_size=20, ceil_pct=False) -> [str]:
         outputs = []
         for i in tqdm(range(0, len(texts), chunk_size), desc="Applying perturbations", disable=self.disable_tqdm):
-            outputs.extend(self.perturb_texts_(texts[i:i + chunk_size], ceil_pct=ceil_pct))
+            outputs.extend(self.perturb_texts_llama_cpp(texts[i:i + chunk_size], ceil_pct=ceil_pct))
         return outputs
 
-    def drop_last_word(self, text):
+    def drop_last_word(self, text) -> str:
         return ' '.join(text.split(' ')[:-1])
 
-    def run_DetectGPT_single_text(self, text, n_perturbations=5):
+    def run_DetectGPT_single_text(self, text, n_perturbations=1) -> float:
         torch.manual_seed(42)
         np.random.seed(42)
 
@@ -135,7 +159,7 @@ class detectGPTseeker(Seeker):
 
         return prediction_score
 
-    def run_DetectGPT_feed(self, feed, n_perturbations=5):
+    def run_DetectGPT_feed(self, feed, n_perturbations=5) -> [float]:
         torch.manual_seed(42)
         np.random.seed(42)
         feed = [text for text in feed if len(text.split()) > 49 ]
@@ -156,7 +180,33 @@ class detectGPTseeker(Seeker):
         
         return prediction_scores
 
-    def calculate_prediction_scores(self, training_feed, n_perturbations=5):
+    def run_AuthentiGPT_feed(self, feed, n_pertubations=5) -> [float]:
+        feed = [text for text in feed if len(text.split()) > 49 ]
+        if len(feed) < 15:
+            return [694201337]
+
+        perturbed_feeds = self.perturb_texts(feed, n_pertubations)
+        
+        similiarity_list = []
+        for single_feed, perturbed_feed in tqdm(zip(feed, perturbed_feeds),desc='Evaluate Cosine Similarities'):
+            try:
+                embeddings_original = compute_embeddings_llama(self.base_model, single_feed)
+                print(embeddings_original)
+                embeddings_perturbed = compute_embeddings_llama(self.base_model, perturbed_feed)
+                print(embeddings_perturbed)
+                
+                embeddings_original_array = np.array(embeddings_original).reshape(1,-1)
+                embeddings_perturbed_array = np.array(embeddings_perturbed).reshape(1,-1)
+                
+                similiarity_list.append(cosine_similarity(embeddings_original_array, embeddings_perturbed_array)[0][0])
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                similiarity_list.append(None)
+        
+        print(f"Similarities: {similiarity_list}")
+        return similiarity_list
+        
+    def calculate_prediction_scores(self, training_feed, n_perturbations=5) -> [float]:
         start_time = time.time()
         torch.manual_seed(42)
         np.random.seed(42)
@@ -182,10 +232,8 @@ class detectGPTseeker(Seeker):
     def detect_secret(self, newsfeed: list[str]) -> bool:
         # Positive scores = human-written, likely a newspaper article
         # Negative scores = machine-written, likely modified with stego
-        # Weighting of different articles maybe useful
-        # Maybe useful to determine weather more articles in a row have negative scores
         
-        prediction_scores = self.run_DetectGPT_feed(newsfeed)
+        prediction_scores = self.run_AuthentiGPT_feed(newsfeed)
         if prediction_scores[0] == 694201337:
             decision = True
         else:

@@ -3,6 +3,7 @@ import itertools
 from typing import Callable
 import numpy as np
 from tqdm import tqdm
+from typing import List
 
 encode_secret = lambda secret: bin(int.from_bytes(secret.encode(), "little"))
 
@@ -101,6 +102,9 @@ def get_rank(llm: Llama, text: str):
     return np.mean(ranks)
 
 'Log Likelihood'
+def compute_embeddings_llama(llm: Llama, text) -> List[float]:
+    return llm.embed(text.encode('utf-8'))
+    
 def get_ll(llm: Llama, text: str):
     tokenized_text = llm.tokenizer().encode(text)
     llm.reset()
