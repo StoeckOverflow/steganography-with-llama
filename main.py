@@ -1,3 +1,4 @@
+import json
 from src.models import DynamicPOE
 from src.seekers.detectGPTseeker import detectGPTseeker
 
