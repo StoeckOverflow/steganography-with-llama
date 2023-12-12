@@ -1,11 +1,9 @@
-from features import *
+from .features import *
 from ..seeker import Seeker
 from tqdm import tqdm
 from ...utils.file_loading import create_dataset
 from ...utils.string_modification import clean
-import json
 import numpy as np
-from llama_cpp import Llama
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
@@ -14,7 +12,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score
 import os
-
 
 class Anomaly_Seeker(Seeker):
     
@@ -133,7 +130,7 @@ class Anomaly_Seeker(Seeker):
         joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
     
     def detect_secret(self, newsfeed: list[str]) -> bool:
-        print('Predicting news feed...')
+        #print('Predicting news feed...')
         
         articles = [clean(article) for article in newsfeed]
 
@@ -141,12 +138,12 @@ class Anomaly_Seeker(Seeker):
         clf = joblib.load('resources/models/anomaly_detector.joblib')
         predictions = clf.predict(features)
         counts = Counter(predictions)
-        print('Predictions:', predictions)
+        #print('Predictions:', predictions)
 
         if counts[-1] >= 1:
-            return False #-1
+            return True #-1
         else:
-            return True #1
+            return False #1
 
     def train_and_test_with_own_feeds(self):
         #benign_data_path = 'resources/feeds/clean_feeds.zip'
