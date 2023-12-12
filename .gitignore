@@ -1,6 +1,6 @@
 # Mac folder order
 .DS_store
-resources/
+#resources/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
