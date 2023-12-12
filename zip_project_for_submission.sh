@@ -1,0 +1,2 @@
+#!/bin/sh
+tar czf submission.tar.gz --exclude='*/__pycache__/*' --exclude='.git' --exclude='.gitignore' --exclude='resources/feeds/*' --exclude="resources/llama-2-7b.Q5_K_M.gguf" --exclude='resources/figures/*' --exclude='resources/t5-large/*' --exclude='documentation/*' --exclude='test/*' --exclude='load_T3_model_locally.sh' --exclude='zip_project_for_submission.sh' *
