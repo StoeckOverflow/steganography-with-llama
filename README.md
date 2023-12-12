@@ -4,18 +4,8 @@ steganography-with-llama is a Python-based tool that utilizes a large language m
 
 ## Table of Contents
 
-- [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-
-## Features
-
-- **LLAMA Integration**: Harness the capabilities of the LLAMA language model for efficient and effective steganography.
-- **Multiple Document Formats**: Support for various document formats, including text files, PDFs, and more, for hiding and extracting secret messages.
-- **User-Friendly**: A straightforward command-line interface for easy encoding and decoding.
-- **Customization**: Options to configure encoding parameters and extraction settings.
-- **Security**: Implement strong encryption to protect your hidden messages.
-- **Cross-Platform**: Works on Windows, macOS, and Linux.
 
 ## Installation
 
