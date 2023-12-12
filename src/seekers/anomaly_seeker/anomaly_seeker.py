@@ -140,7 +140,7 @@ class Anomaly_Seeker(Seeker):
         features = self.extract_features(articles)
         clf = joblib.load('resources/models/anomaly_detector.joblib')
         predictions = clf.predict(features)
-        counts = Counter(predictions[:6])
+        counts = Counter(predictions)
         print('Predictions:', predictions)
 
         if counts[-1] >= 1:
