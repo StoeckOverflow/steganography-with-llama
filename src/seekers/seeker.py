@@ -6,7 +6,7 @@ import json
 class Seeker(ABC):
     
     def __init__(self, disable_tqdm) -> None:
-        self.model_path = 'resources/llama-2-7b.Q5_K_M.gguf'
+        self.model_path = 'llama-2-7b.Q5_K_M.gguf'
         self.base_model = Llama(
             model_path=self.model_path,
             verbose=False,        
@@ -16,7 +16,6 @@ class Seeker(ABC):
             n_threads=3,          # Number of threads llama operations can be processed
             n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
             use_mlock=True,        # Use mlock to prevent paging the model to disk (depends on your system's memory)
-            embedding=True
         )
         self.disable_tqdm = disable_tqdm
     

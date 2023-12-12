@@ -15,7 +15,7 @@ class DynamicPOE:
     """
     Combines a Dynamic Arithmetic Encoding Codec with it's hider.
     """
-    def __init__(self, bits_per_token: int = 3, skip_tokens: int = 0, vocabulary: Iterable = None, path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True):
+    def __init__(self, bits_per_token: int = 3, skip_tokens: int = 0, vocabulary: Iterable = None, path_to_llm: str = "llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True):
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
             self.vocabulary = vocabulary
