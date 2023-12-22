@@ -3,3 +3,4 @@ numpy==1.26.1
 tqdm==4.66.1
 typing==3.7.4.3
 typing_extensions==4.8.0
+llama-cpp-python==0.2.20

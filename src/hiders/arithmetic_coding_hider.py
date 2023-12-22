@@ -1,8 +1,11 @@
 import copy
+import time
 from typing import Union, Callable
 
 import tqdm
 from llama_cpp import Llama
+
+from src.utils import ExtendCompletionLength
 
 __all__ = [
     "ArithmeticProbOrdHider",
@@ -12,6 +15,10 @@ class ArithmeticProbOrdHider:
     
     def __init__(self, llm: Llama, bits_per_token: int = 3, skip_tokens: int = 0, disable_tqdm: bool = True):
         self.llm = llm
+        self.forbidden_tokens = [llm.tokenize(bytes(token, encoding="utf-8"))[-1] for token in ["\n", "...", "…"]]
+        self.forbidden_tokens += [llm.token_eos(), llm.token_bos()]
+        self.end_of_sequence_tokens = [".", "!", "?", "\n"]
+        self.repeat_penalty = 1.5
         self.get_valid_tokens = self.initialize_token_getter(self.llm, bits_per_token)
         self.update_feed = self.initialize_feed_updater(self.llm, skip_tokens)
         self.disable_tqdm = disable_tqdm
@@ -26,21 +33,30 @@ class ArithmeticProbOrdHider:
                 return False
         return True
 
-    @staticmethod
-    def initialize_feed_updater(llm: Llama, skip_tokens: int = 0) -> Callable:
-        def _update_feed(feed: str, next_token: str) -> str:
+    def initialize_feed_updater(self, llm: Llama, skip_tokens: int = 0) -> Callable:
+        logits_processor = ExtendCompletionLength(min_completion_length=skip_tokens, eos_token_id=self.forbidden_tokens)
+        def _update_feed(feed: str, next_token: str, return_padding: bool = False) -> str:
             if skip_tokens == 0:
                 return feed + next_token
-            feed_padding = llm(feed + next_token, top_p=0, max_tokens=2, logprobs=1, temperature= 0, top_k=1)["choices"][0]["text"]
-            return feed + next_token + feed_padding
+            updated_feed = feed + next_token
+            logits_processor.update_prompt_length(llm.tokenize(bytes(updated_feed, "utf-8")))
+            start = time.time()
+            feed_padding = llm(updated_feed, top_p=0, max_tokens=skip_tokens, logprobs=1, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]["text"]
+            print(f"UPDATE: Time to generate {skip_tokens} tokens: {time.time() - start}")
+            if return_padding:
+                return updated_feed + feed_padding, feed_padding
+            return updated_feed + feed_padding
         
         return _update_feed
 
-    @staticmethod
-    def initialize_token_getter(llm: Llama, bits_per_token: int = 3) -> Callable[[str, bool, int], list[str]]:
+    def initialize_token_getter(self, llm: Llama, bits_per_token: int = 3) -> Callable[[str, bool, int], list[str]]:
+        logits_processor = ExtendCompletionLength(min_completion_length=1, eos_token_id=self.forbidden_tokens)
         def _get_valid_token(prompt: str, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> list[str]:
             nr_tokens_to_generate = 2**(bits_per_token + recursive_extra_tokens)
-            output = llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1)["choices"][0]
+            logits_processor.update_prompt_length(llm.tokenize(bytes(prompt, "utf-8")))
+            start = time.time()
+            output = llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]
+            print(f"GET TOKEN: Time to generate {nr_tokens_to_generate} tokens: {time.time() - start}")
             finish_reason = output["finish_reason"]
             if finish_reason == "stop":
                 return ""
@@ -94,6 +110,8 @@ class ArithmeticProbOrdHider:
         Returns:
             tuple[str, str]: [news_string containing, secret and all bits that did not fit]
         """
+        # Reset LLM cache
+        self.llm.reset()
         # Create stego feed from real feed for prompt
         doctored_article: str = prompt
         for j, binary_secret in tqdm.tqdm(enumerate(binary_secrets), "Hidding message nr: ", disable=self.disable_tqdm):
@@ -102,9 +120,11 @@ class ArithmeticProbOrdHider:
                 next_token_probs = self.get_valid_tokens(doctored_article)
                 chosen_ind = int(next_bits, 2)
                 next_token = next_token_probs[chosen_ind]
-                doctored_article = self.update_feed(doctored_article, next_token)
-                if len(doctored_article) > soft_max_chars_limit and doctored_article.endswith((".", "!", "?")):
-                    return doctored_article, [binary_secret[i+self.bits_per_token:], *binary_secrets[j+1:]]
+                doctored_article, text_padding = self.update_feed(doctored_article, next_token, return_padding=True)
+                if len(doctored_article) > soft_max_chars_limit and any([_terminator_token in text_padding for _terminator_token in self.end_of_sequence_tokens]):  # doctored_article.endswith((".", "!", "?")):
+                    _found_token = [_terminator_token for i, _terminator_token in enumerate(self.end_of_sequence_tokens) if _terminator_token in text_padding][0]
+                    index_in_padding_from_end = len(text_padding) - text_padding.find(_found_token)
+                    return doctored_article[:-index_in_padding_from_end], [binary_secret[i+self.bits_per_token:], *binary_secrets[j+1:]]
 
             # Append one "out-of-range" token to signalize the change from one secret to the next
             doctored_article = self.update_feed(doctored_article, self.get_valid_tokens(doctored_article, get_end_condition=True))
@@ -167,8 +187,12 @@ class ArithmeticProbOrdHider:
                 temp_feed = copy.deepcopy(analyzed_feed)
                 temp_feed = self.update_feed(temp_feed, self.get_valid_tokens(temp_feed, True))
                 next_token_probs = self.get_valid_tokens(temp_feed)
-                next_token = self.get_next_possible_token(next_token_probs, news_article, len(temp_feed))
-                all_messages_found = not next_token
+                if len(news_article) > len(temp_feed):
+                    next_token = self.get_next_possible_token(next_token_probs, news_article, len(temp_feed))
+                    all_messages_found = not next_token
+                else:
+                    all_messages_found = True
+                    temp_feed = news_article
                 return decoded_msg, all_messages_found, temp_feed
                     
             chosen_ind = next_token_probs.index(next_token)
