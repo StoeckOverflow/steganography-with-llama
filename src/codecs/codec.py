@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import List, Tuple
 from llama_cpp import Llama
 
 class Codec(ABC):
@@ -7,7 +8,7 @@ class Codec(ABC):
         self.llm = llm
     
     @abstractmethod
-    def encode_single_string(self, binary_secret: str, **kwargs) -> tuple[str, str]:
+    def encode_single_string(self, binary_secret: str, **kwargs) -> Tuple[str, str]:
         """
         Encode a binary_secret string and return the encoded version.
 
@@ -20,7 +21,7 @@ class Codec(ABC):
         pass
     
     @abstractmethod
-    def encode_newsfeed(self, news_feed: list[str], binary_secret: str, **kwargs) -> str:
+    def encode_newsfeed(self, news_feed: List[str], binary_secret: str, **kwargs) -> str:
         """
         Encode a binary_secret string and return the encoded version and all bits that did not fit.
 
@@ -46,7 +47,7 @@ class Codec(ABC):
         pass
     
     @abstractmethod
-    def decode_newsfeed(self, newsfeed: list[str], **kwargs) -> str:
+    def decode_newsfeed(self, newsfeed: List[str], **kwargs) -> str:
         """
         Decode an encoded binary_secret and return the original binary_secret string.
 

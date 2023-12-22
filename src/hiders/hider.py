@@ -1,16 +1,17 @@
 from abc import ABC, abstractmethod
 import json
 import sys
+from typing import List
 from ..utils import encode_secret
 from llama_cpp import Llama
 from ..codecs.codec import Codec
 
 class Hider(ABC):
     
-    def __init__(self, codec: Codec, llm:Llama):
+    def __init__(self, codec: Codec, llm: Llama):
         self.codec = codec(llm)
     
-    def hide_secret(self, newsfeed: list[str], secret:str, output:str = "doctored_feed"):
+    def hide_secret(self, newsfeed: List[str], secret: str, output: str = "doctored_feed"):
         """
         Hide a secret within a newsfeed using the encoder of codec.
 
@@ -37,7 +38,7 @@ class Hider(ABC):
             with open(output +".json", "w") as f:
                 json.dump(doctored_feed, f)
                 
-    def reveal_secret(self, newsfeed: list[str], output:str = "decoded_feed"):
+    def reveal_secret(self, newsfeed: List[str], output: str = "decoded_feed"):
         """Decodes the secret out of a given newsfeed
 
         Args:

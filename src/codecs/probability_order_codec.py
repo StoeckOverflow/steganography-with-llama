@@ -1,5 +1,6 @@
 import json
 import tqdm
+from typing import Iterable, List, Tuple
 from ..utils import split_in_separators, initialize_token_getter, uniquify, decode_secret
 from .codec import Codec
 from llama_cpp import Llama
@@ -10,7 +11,7 @@ class ProbabilityOrderCodec(Codec):
         super().__init__(llm)
         self.get_valid_token = initialize_token_getter(llm)
 
-    def encode_single_string(self, binary_secret: str, prompt: str, bits_per_token: int = 3, soft_max_chars_limit: int = 450) -> tuple[str, str]:
+    def encode_single_string(self, binary_secret: str, prompt: str, bits_per_token: int = 3, soft_max_chars_limit: int = 450) -> Tuple[str, str]:
         """
         Encode as many bits of the binary secret into news_string.
 
@@ -58,7 +59,7 @@ class ProbabilityOrderCodec(Codec):
 
         return doctored_newsfeed, return_bits
     
-    def encode_newsfeed(self, newsfeed: list[str], binary_secret: str, bits_per_token: int = 3, soft_max_chars_lim: int = 450, nr_prompt_words: int = 5) -> str:
+    def encode_newsfeed(self, newsfeed: List[str], binary_secret: str, bits_per_token: int = 3, soft_max_chars_lim: int = 450, nr_prompt_words: int = 5) -> str:
         """
         Encodes the binary_secret in the newsfeed.
 
@@ -84,7 +85,7 @@ class ProbabilityOrderCodec(Codec):
                 
         return doctored_newsfeed + newsfeed[len(doctored_newsfeed):]
 
-    def decode_single_string(self, news_string: str, nr_prompt_words: int = 5, bits_per_token: int = 3) -> tuple[str, bool]:
+    def decode_single_string(self, news_string: str, nr_prompt_words: int = 5, bits_per_token: int = 3) -> Tuple[str, bool]:
         """
         Decodes the binary_secret out of a single newsfeed string.
         
@@ -136,7 +137,7 @@ class ProbabilityOrderCodec(Codec):
 
         return decoded_message, False
     
-    def decode_newsfeed(self, newsfeed: list[str], nr_prompt_words: int = 5, bits_per_token: int = 3) -> str:
+    def decode_newsfeed(self, newsfeed: List[str], nr_prompt_words: int = 5, bits_per_token: int = 3) -> str:
         """
         Decodes the binary secret from a list of newsfeed strings.
         ToDo: Decoding into Text Message from bitstream

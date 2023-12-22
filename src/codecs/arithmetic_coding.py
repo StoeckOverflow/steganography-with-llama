@@ -1,6 +1,5 @@
-from typing import Optional
+from typing import Optional, Dict, Iterable, Tuple
 from collections import Counter
-from collections.abc import Iterable
 from decimal import Decimal, getcontext
 import sys
 
@@ -20,7 +19,7 @@ class DynamicArithmeticEncoding:
     """
     SEQ_FINISH = "SEQUENCE_FINISHED_CHARACTER"
 
-    def __init__(self, frequency_table: dict):
+    def __init__(self, frequency_table: Dict[str, int]):
         """
         Needs frequency table with vocabulary
         """
@@ -43,14 +42,14 @@ class DynamicArithmeticEncoding:
 
         self.probability_table = self.get_probability_table(self.frequency_table)
 
-    def get_probability_table(self, frequency_table: Optional[dict]) -> Optional[dict]:
+    def get_probability_table(self, frequency_table: Optional[Dict[str, int]]) -> Optional[Dict[str, float]]:
         """
         Normalizes the frequency table
         """
         total = sum(frequency_table.values())
         return {key: value/total for key, value in frequency_table.items()}
     
-    def process_stage(self, stage_min: Decimal, stage_max: Decimal) -> dict[str, Decimal]:
+    def process_stage(self, stage_min: Decimal, stage_max: Decimal) -> Dict[str, Decimal]:
         """
         Gets the stage interval and processes the probability chart for the next character.
         """
@@ -76,7 +75,7 @@ class DynamicArithmeticEncoding:
         sys.set_int_max_str_digits(max(needed_digits + 1, sys.get_int_max_str_digits()))
         getcontext().prec = needed_digits
 
-    def encode(self, msg: str, bits_per_decimal: float = np.pi) -> tuple[Decimal, Decimal, Decimal]:
+    def encode(self, msg: str, bits_per_decimal: float = np.pi) -> Tuple[Decimal, Decimal, Decimal]:
         """
         Iteratively go through the message and find decimal representation of msg.
         If self.dynamic_probs is True, the freq_table gets updated online.

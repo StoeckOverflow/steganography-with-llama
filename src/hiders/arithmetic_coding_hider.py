@@ -1,7 +1,6 @@
 import copy
 import time
-from typing import Union, Callable
-
+from typing import Union, Callable, List, Tuple, Dict
 import tqdm
 from llama_cpp import Llama
 
@@ -25,7 +24,7 @@ class ArithmeticProbOrdHider:
         self.bits_per_token = bits_per_token
 
     @staticmethod
-    def _token_is_usable(token: str, other_tokens: list[str]) -> bool:
+    def _token_is_usable(token: str, other_tokens: List[str]) -> bool:
         if token in [" "]: # blocks too many tokens
             return False
         for other in other_tokens:
@@ -49,9 +48,9 @@ class ArithmeticProbOrdHider:
         
         return _update_feed
 
-    def initialize_token_getter(self, llm: Llama, bits_per_token: int = 3) -> Callable[[str, bool, int], list[str]]:
+    def initialize_token_getter(self, llm: Llama, bits_per_token: int = 3) -> Callable[[str, bool, int], List[str]]:
         logits_processor = ExtendCompletionLength(min_completion_length=1, eos_token_id=self.forbidden_tokens)
-        def _get_valid_token(prompt: str, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> list[str]:
+        def _get_valid_token(prompt: str, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> List[str]:
             nr_tokens_to_generate = 2**(bits_per_token + recursive_extra_tokens)
             logits_processor.update_prompt_length(llm.tokenize(bytes(prompt, "utf-8")))
             start = time.time()
@@ -98,7 +97,7 @@ class ArithmeticProbOrdHider:
             txt = txt.replace(sep, default_sep)
         return [i.strip() for i in txt.split(default_sep) if len(i) > 0]
 
-    def hide_in_single_article(self, binary_secrets: list[str], prompt: str, soft_max_chars_limit: int = 450) -> tuple[str, str]:
+    def hide_in_single_article(self, binary_secrets: List[str], prompt: str, soft_max_chars_limit: int = 450) -> Tuple[str, str]:
         """
         Encode as many bits of the binary secret into news_string.
 
@@ -133,7 +132,7 @@ class ArithmeticProbOrdHider:
         doctored_article = self.update_feed(doctored_article, self.get_valid_tokens(doctored_article, get_end_condition=True))
         return doctored_article, []
     
-    def hide_in_whole_newsfeed(self, news_feed: list[str], binary_secrets: list[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5) -> dict[str, list[str]]:
+    def hide_in_whole_newsfeed(self, news_feed: List[str], binary_secrets: List[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5) -> Dict[str, List[str]]:
         """
         Encodes the binary_secret in the newsfeed.
 
@@ -162,7 +161,7 @@ class ArithmeticProbOrdHider:
         return {"feed": doctored_newsfeed + news_feed[len(doctored_newsfeed):]}
 
     @staticmethod
-    def get_next_possible_token(next_token_probs: list[str], news_article: int, i: int) -> Union[str, bool]:
+    def get_next_possible_token(next_token_probs: List[str], news_article: int, i: int) -> Union[str, bool]:
             max_len_next_token = max([len(token) for token in next_token_probs]) # Check the max length to check in message where the next token has to be found
             next_possible_tokens = [token for token in next_token_probs if news_article[i:i+max_len_next_token].startswith(token)] # If there's still more than one that would fit
             next_possible_tokens = sorted(next_possible_tokens, key= lambda x: news_article[i:i+max_len_next_token].find(x)) # Keep the one that occurs first -> next token
@@ -170,7 +169,7 @@ class ArithmeticProbOrdHider:
                 return next_possible_tokens[0]
             return False
 
-    def retrieve_single_secret_from_single_article(self, news_article: str, analyzed_feed: str) -> tuple[str, bool]:
+    def retrieve_single_secret_from_single_article(self, news_article: str, analyzed_feed: str) -> Tuple[str, bool]:
         decoded_msg = ""
         all_messages_found = False
 
@@ -204,7 +203,7 @@ class ArithmeticProbOrdHider:
         return decoded_msg, all_messages_found, ""
 
 
-    def retrieve_multiple_secrets_from_single_article(self, news_article: str, nr_prompt_words: int = 5) -> tuple[str, bool]:
+    def retrieve_multiple_secrets_from_single_article(self, news_article: str, nr_prompt_words: int = 5) -> Tuple[str, bool]:
         analyzed_feed = " ".join(self.split_in_separators(news_article)[:nr_prompt_words])
         decoded_messages = []
         all_messages_found = False
@@ -217,7 +216,7 @@ class ArithmeticProbOrdHider:
                 return decoded_messages, [i != len(decoded_messages) - 1 for i in range(len(decoded_messages))]
         
     @staticmethod
-    def concat_decoded_secrets(decoded_secrets: list[str], completely_decoded_flags: list[bool]) -> list[str]:
+    def concat_decoded_secrets(decoded_secrets: List[str], completely_decoded_flags: List[bool]) -> List[str]:
         out_stuff = []
         next_false = 0
         next_true = 0
@@ -236,7 +235,7 @@ class ArithmeticProbOrdHider:
 
 
     
-    def retrieve_multiple_secrets_from_news_feed(self, news_feed: list[str], nr_prompt_words: int = 5) -> list[str]:
+    def retrieve_multiple_secrets_from_news_feed(self, news_feed: List[str], nr_prompt_words: int = 5) -> List[str]:
         decoded_secrets = []
         fully_decoded_flags = []
         for news_article in tqdm.tqdm(news_feed, "Retrieving secret from article nr: ", disable=self.disable_tqdm):

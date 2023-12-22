@@ -1,5 +1,5 @@
 from decimal import Decimal, getcontext
-
+from typing import Tuple
 
 __all__ = [
     "Dec2BinConverter"
@@ -7,7 +7,7 @@ __all__ = [
 
 class Dec2BinConverter:
     @staticmethod
-    def get_bin_from_decimal(dec: Decimal, bits_per_token: int = 3) -> tuple[str, str]:
+    def get_bin_from_decimal(dec: Decimal, bits_per_token: int = 3) -> Tuple[str, str]:
         s = format(dec)
         s = s[s.find(".")+1:]
         for i, ch in enumerate(s):
