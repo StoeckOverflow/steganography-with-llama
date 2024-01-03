@@ -3,6 +3,12 @@ import random
 import string
 import json
 
+'''
+TODO:
+- 30% our Hider, 30% other Hider, 40 % clean feeds for Detection Training
+- Evaluate Perplexity Threshold
+'''
+
 def create_random_secret(seed):
     random.seed(seed)
     return ''.join(random.choice(string.ascii_letters) for i in range(220))

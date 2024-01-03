@@ -55,8 +55,6 @@ def update_news_feed(current_news_feed: str, next_token: str, max_len: int) -> s
         return current_news_feed + next_token
     
 
-'Baseline Metrics, which may be useful for detection'
-
 'Probability of tokenized text'
 def get_probabilities(llm: Llama, text: str):
     'get probabilites estimation of tokenized text'
@@ -70,13 +68,7 @@ def get_probabilities(llm: Llama, text: str):
 
 'Entropy'  
 def get_entropy(llm: Llama, text: str):
-    tokenized = llm.tokenizer().encode(text)
-
-    llm.reset()
-    llm.eval(tokenized)
-
-    logits = np.array(llm._scores)
-    softmax_logits = softmax(logits)
+    softmax_logits = get_probabilities(llm, text)
     log_softmax_logits = np.log(softmax_logits)
     neg_entropy = softmax_logits * log_softmax_logits
     entropy = -neg_entropy.sum(-1)
@@ -130,11 +122,13 @@ def softmax(x):
     return e_x / e_x.sum(axis=-1, keepdims=True)
 
 def get_perplexity(llm: Llama, text: str):
+    
     tokenized_text = llm.tokenizer().encode(text)
     llm.reset()
     llm.eval(tokenized_text)
     logits = np.array(llm._scores)
     softmax_logits = softmax(logits)
+    
     log_likelihood = 0.0
     for i, token_id in enumerate(tokenized_text):
         prob = softmax_logits[i, token_id] if softmax_logits[i, token_id] != 0 else softmax_logits[i, token_id]+1e-10
@@ -143,4 +137,3 @@ def get_perplexity(llm: Llama, text: str):
     avg_neg_log_likelihood = -log_likelihood / len(tokenized_text)
 
     return np.exp(avg_neg_log_likelihood)
-
