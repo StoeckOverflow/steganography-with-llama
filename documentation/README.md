@@ -6,7 +6,7 @@ The presentations folder contains the latest powerpoint presentations.
 ## Detection
 
 |Title|Link|
-|----|-----|
+|-----|----|
 |Defending Against Neural Fake News|https://arxiv.org/abs/1905.12616|
 |Detecting Cross-Modal Inconsistency to Defend Against Neural Fake News|https://arxiv.org/abs/2009.07698|
 |Detection of Generative Linguistic Steganography Based on Explicit and Latent Text Word Relation Mining Using Deep Learning|https://www.computer.org/csdl/journal/tq/2023/02/09732641/1BD8Qpr0dy0|
@@ -15,7 +15,7 @@ The presentations folder contains the latest powerpoint presentations.
 ## Hiding
 
 |Title|Link|
-|-----|-----|
+|-----|----|
 |A Watermark for Large Language Models|https://arxiv.org/pdf/2301.10226.pdf|
 |CATER - Intellectual Property Protection on Text Generation APIs via Conditional Watermarking|https://arxiv.org/abs/2209.08773|
 |Neccessary and Sufficcient Watermark for Large Language Models|https://arxiv.org/abs/2310.00833|
