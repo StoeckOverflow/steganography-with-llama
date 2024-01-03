@@ -7,7 +7,7 @@ class Codec(ABC):
         self.llm = llm
     
     @abstractmethod
-    def encode_single_string(self, binary_secret: str, **kwargs) -> tuple[str, str]:
+    def encode_single_string(self, binary_secret: str, **kwargs):
         """
         Encode a binary_secret string and return the encoded version.
 
