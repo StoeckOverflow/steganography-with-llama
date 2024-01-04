@@ -53,7 +53,6 @@ def initialize_token_getter(llm: Llama) -> Callable:
 def update_news_feed(current_news_feed: str, next_token: str, max_len: int) -> str:
     if len(current_news_feed) < 450:
         return current_news_feed + next_token
-    
 
 'Probability of tokenized text'
 def get_probabilities(llm: Llama, text: str):
@@ -122,7 +121,6 @@ def softmax(x):
     return e_x / e_x.sum(axis=-1, keepdims=True)
 
 def get_perplexity(llm: Llama, text: str):
-    
     tokenized_text = llm.tokenizer().encode(text)
     llm.reset()
     llm.eval(tokenized_text)
