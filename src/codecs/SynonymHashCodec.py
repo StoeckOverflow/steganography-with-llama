@@ -18,11 +18,11 @@ TODO:
 - Adjust Download Script
 '''
 
-'''
-Source: https://github.com/ku-nlp
-'''
 class SynonymHashCodec(Codec):
-    
+    '''
+    Source: https://github.com/ku-nlp
+    '''
+
     def __init__(self, llm: Llama):
         super().__init__(llm)
         self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('resources')
