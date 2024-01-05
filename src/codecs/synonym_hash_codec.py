@@ -10,6 +10,7 @@ from torch import Tensor
 import torch.nn.functional as F
 from transformers import BertTokenizer, BertForMaskedLM
 from transformers.tokenization_utils import PreTrainedTokenizer
+from ..utils import decode_secret
 
 '''
 TODO:
@@ -23,11 +24,14 @@ class SynonymHashCodec(Codec):
     Source: https://github.com/ku-nlp
     '''
 
-    def __init__(self, llm: Llama):
+    def __init__(self, llm: Llama, disable_tqdm):
         super().__init__(llm)
-        self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('resources/bert-base-cased')
-        self._model = BertForMaskedLM.from_pretrained('resources/bert-base-cased')
+        #self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('resources/bert-base-cased', local_files_only=True)
+        #self._model = BertForMaskedLM.from_pretrained('resources/bert-base-cased', local_files_only=True)
+        self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+        self._model = BertForMaskedLM.from_pretrained('bert-base-cased')
         self._STOPWORDS: List[str] = stopwords.words('english')
+        self.disable_tqdm = disable_tqdm
     
     def encode_single_string(self, single_feed: str,  binary_secret: str, mask_interval: int = 3, score_threshold: float = 0.01) -> tuple[str, str]:
         assert set(binary_secret) <= set('01')
@@ -54,14 +58,15 @@ class SynonymHashCodec(Codec):
         return stego_text, binary_secret
     
     def encode_newsfeed(self, news_feed: list[str], binary_secret: str, **kwargs) -> str:
-        result_stego = ''
-        for feed in tqdm(news_feed,desc='Encode Newsfeed'):
+        doctored_newsfeed = []
+        for feed in tqdm(news_feed,desc='Encode Newsfeed', disable=self.disable_tqdm):
             stego_text, binary_secret_string = self.encode_single_string(feed, binary_secret)
-            result_stego += stego_text
-            binary_secret -= binary_secret_string
-            if binary_secret is '':
+            doctored_newsfeed.append(stego_text)
+            binary_secret = binary_secret[len(binary_secret_string):]
+            if len(binary_secret) == 0:
                 break
-        return result_stego
+        
+        return doctored_newsfeed + news_feed[len(doctored_newsfeed):]
     
     def decode_single_string(self, newsfeed:str, mask_interval: int = 3, score_threshold: float = 0.005) -> str:
         decoded_message: List[str] = []
@@ -82,10 +87,14 @@ class SynonymHashCodec(Codec):
         return ''.join(decoded_message)
     
     def decode_newsfeed(self, newsfeed: list[str], **kwargs):
-        result = ''
-        for feed in tqdm(newsfeed,desc='Decode Newsfeed'):
-            result += " " + self.decode_single_string(feed)
-        return result
+        remaining_decoded_secret = []
+
+        for feed in tqdm(newsfeed,desc='Decode Newsfeed', disable=self.disable_tqdm):
+            decoded_message = self.decode_single_string(feed)
+            remaining_decoded_secret.append(decoded_message)
+        
+        return decode_secret(''.join(remaining_decoded_secret))    
+
     
     def _predict(self, input_ids: Union[Tensor, List[List[int]]]):
         self._model.eval()

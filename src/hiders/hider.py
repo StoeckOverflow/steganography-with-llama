@@ -7,8 +7,8 @@ from ..codecs.codec import Codec
 
 class Hider(ABC):
     
-    def __init__(self, codec: Codec, llm:Llama):
-        self.codec = codec(llm)
+    def __init__(self, codec: Codec, llm:Llama, disable_tqdm):
+        self.codec = codec(llm, disable_tqdm)
     
     def hide_secret(self, newsfeed: list[str], secret:str, output:str = "doctored_feed"):
         """
