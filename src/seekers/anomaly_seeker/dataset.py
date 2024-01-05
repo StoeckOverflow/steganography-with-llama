@@ -7,8 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from llama_cpp import Llama
 from utils import get_perplexity
-from ...hiders.synonym_hider import hide_secret as synonym_hide_secret
-from ...hiders.arithmetic_coding_hider import hide_in_single_article as arithmetic_hide_in_single_article 
+from src.hiders.synonym_hider import SynonymHider
+from src.models import DynamicPOE
 
 def evaluate_perplexity_threshold(llm: Llama):
     articles_path = 'resources/feeds/clean_feeds'
@@ -70,6 +70,9 @@ def create_newsfeed_dataset():
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
     
+    dynamic_poe = DynamicPOE(disable_tqdm=False)
+    synonym_hider = SynonymHider(disable_tqdm=False)
+    
     i = 0
     for path in articles_path:
         
@@ -79,15 +82,15 @@ def create_newsfeed_dataset():
         feed_secret = parsed_feed['secret']
         
         if i <= 4:
-            doctored_newsfeed = synonym_hide_secret(feed_array, feed_secret, output='string')
+            doctored_newsfeeds = synonym_hider.hide_secret(feed_array, feed_secret, output='json')
         if i > 4 and i < 8:
-            doctored_newsfeed = arithmetic_hide_in_single_article(feed_array, feed_secret, output='string')
+            doctored_newsfeeds = dynamic_poe.hide(feed_array, feed_secret)
         if i > 8:
-            doctored_newsfeed = feed_array #newsfeed is not processed
+            doctored_newsfeeds = feed_array #newsfeed is not processed
 
         formatted_number = "{:03d}".format(i)
         with open(os.path.join(doctored_articles_path,f"doctored_feed_{formatted_number}.json"),'w') as file:
-            json.dump(doctored_newsfeed, file, indent=4)
+            json.dump(doctored_newsfeeds, file, indent=4)
 
         i += 1
 
