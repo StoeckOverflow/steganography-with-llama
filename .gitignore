@@ -1,6 +1,5 @@
 # Mac folder order
 .DS_store
-#resources/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -568,6 +567,9 @@ FodyWeavers.xsd
 *.gguf
 *.model
 *.bin
+
+resources/bert-base-cased/*
+resources/t5-large/*
 
 # Models
 #*.joblib
