@@ -8,11 +8,12 @@ import matplotlib.pyplot as plt
 from llama_cpp import Llama
 from utils import get_perplexity
 from ...hiders.synonym_hider import hide_secret as synonym_hide_secret
-from ...hiders.arithmetic_coding_hider import hide_in_single_article as arithmetic_hide_in_single_article
+from ...hiders.arithmetic_coding_hider import hide_in_single_article as arithmetic_hide_in_single_article 
 
 def evaluate_perplexity_threshold(llm: Llama):
     articles_path = 'resources/feeds/clean_feeds'
     perplexity_scores = []
+    i = 0
     for path in articles_path:
         
         print(f"Current File: {path.split('/')[-1]}\nNumber: {i}")
@@ -20,7 +21,7 @@ def evaluate_perplexity_threshold(llm: Llama):
         feed_array = parsed_feed['feed']
         for feed in feed_array:
             perplexity_scores.append(get_perplexity(llm, feed))
-
+        i += 1
     return perplexity_scores
 
 def plot_perplexity_statistics(perplexity_scores):
