@@ -8,12 +8,7 @@ import matplotlib.pyplot as plt
 from llama_cpp import Llama
 from utils import get_perplexity
 from ...hiders.synonym_hider import hide_secret as synonym_hide_secret
-from ...hiders.arithmetic_coding_hider import hide_in_single_article as arithmetic_hide_in_single_article 
-
-
-def create_random_secret(seed):
-    random.seed(seed)
-    return ''.join(random.choice(string.ascii_letters) for i in range(220))
+from ...hiders.arithmetic_coding_hider import hide_in_single_article as arithmetic_hide_in_single_article
 
 def evaluate_perplexity_threshold(llm: Llama):
     articles_path = 'resources/feeds/clean_feeds'
@@ -34,13 +29,10 @@ def plot_perplexity_statistics(perplexity_scores):
     mean_score = np.mean(perplexity_scores)
     median_score = np.median(perplexity_scores)
     std_deviation = np.std(perplexity_scores)
-
-    # Percentiles
     percentile_25 = np.percentile(perplexity_scores, 25)
     percentile_50 = np.percentile(perplexity_scores, 50)
     percentile_75 = np.percentile(perplexity_scores, 75)
 
-    # Print the statistics
     print(f"Mean Perplexity: {mean_score}")
     print(f"Median Perplexity: {median_score}")
     print(f"Standard Deviation: {std_deviation}")
@@ -54,6 +46,16 @@ def plot_perplexity_statistics(perplexity_scores):
     plt.xlabel("Perplexity")
     plt.ylabel("Frequency")
     plt.savefig('perplexity_statistical_analysis.png')
+    
+    data = {
+        "Statistic": ["Mean Perplexity", "Median Perplexity", "Standard Deviation", 
+                    "25th Percentile", "50th Percentile (Median)", "75th Percentile"],
+        "Value": [mean_score, median_score, std_deviation, 
+                percentile_25, percentile_50, percentile_75]
+    }
+
+    df = pd.DataFrame(data)
+    df.to_csv('resources/perplexity_statistics.csv', index=False)
 
 def create_newsfeed_dataset():
     '''
@@ -87,7 +89,11 @@ def create_newsfeed_dataset():
             json.dump(doctored_newsfeed, file, indent=4)
 
         i += 1
-    
+
+def create_random_secret(seed):
+    random.seed(seed)
+    return ''.join(random.choice(string.ascii_letters) for i in range(220))
+
 def create_new_feeds_of_kaggle_dataset():
     more_articles_path = "resources/kaggle_articles.csv"
     dataset_df = pd.read_csv(more_articles_path, encoding="ISO-8859-1")
