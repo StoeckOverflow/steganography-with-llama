@@ -25,8 +25,8 @@ class SynonymHashCodec(Codec):
 
     def __init__(self, llm: Llama):
         super().__init__(llm)
-        self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('resources')
-        self._model = BertForMaskedLM.from_pretrained('resources')
+        self._tokenizer: PreTrainedTokenizer = BertTokenizer.from_pretrained('resources/bert-base-cased')
+        self._model = BertForMaskedLM.from_pretrained('resources/bert-base-cased')
         self._STOPWORDS: List[str] = stopwords.words('english')
     
     def encode_single_string(self, single_feed: str,  binary_secret: str, mask_interval: int = 3, score_threshold: float = 0.01) -> tuple[str, str]:

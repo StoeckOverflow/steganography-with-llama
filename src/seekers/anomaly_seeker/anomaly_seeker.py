@@ -21,6 +21,9 @@ class Anomaly_Seeker(Seeker):
     
     def __init__(self, disable_tqdm=False) -> None:
         super().__init__(disable_tqdm)
+        perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
+        self.mean_perplexity = perplexity_statistics['Mean Perplexity']
+        self.std_perplexity = perplexity_statistics['Standard Deviation']
 
     def extract_features(self,articles):
         features = []
@@ -43,30 +46,20 @@ class Anomaly_Seeker(Seeker):
             
             # Llama Features
             probs = get_probabilities(self.llm, article)
-            log_probs = np.log(probs)
             avg_token_probability = np.mean(probs)
-            
-            # Perplexity measures a model’s uncertainty in predicting the next token
-            # Lower values indicate a more predictable and effective model
-            # Ranges: 1 to inf
-            
-            # Analyze 5 newsfeeds, each with 30 articles, to establish a baseline of perplexity scores.
-            # Compute perplexity for each article to gauge the "normal" range.
-            # Anomaly Detection: Compare new articles’ perplexity against this baseline.
-            # To Do: Z-Score normalization of article perplexities
-            
-            # Goal: Identify if article has high z-score
-            # Important: Baseline Calculation and integration of comparison against baseline
-            perplexity = get_perplexity(self.llm, article)
             
             # Reflects the diversity or uncertainty of token predictions.
             # Tokens with low log-probability are less suspicious in high-entropy (uniform) distributions
             # High Entropy: Indicates uncertainty, many tokens are equally likely
-            # Low Entropy (Spiky Distribution): Indicates certainty, fewer tokens are likely
+            # Low Entropy: (Spiky Distribution): Indicates certainty, fewer tokens are likely
             # 1 Compute the entropy of the token distribution at each position in the text.
             # 2 Assess the log-probability of the actual token at each position.
             # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
-            entropy = get_entropy(self.llm, article, probs,log_probs)
+            entropy = get_entropy(self.llm, article)
+            
+            # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
+            # Lower values indicate a more predictable and effective model
+            perplexity_scaled = (get_perplexity(self.llm, article) - self.std_perplexity) / self.mean_perplexity
 
             article_features = [length, 
                                 avg_sentence_length, 
@@ -79,11 +72,11 @@ class Anomaly_Seeker(Seeker):
                                 named_entities, 
                                 repetition, 
                                 avg_token_probability,
-                                perplexity
+                                perplexity_scaled
                                 ]
             
             features.append(article_features)
-
+        
         scaler = StandardScaler()
         transformed_features = scaler.fit_transform(features)
         df = pd.DataFrame(transformed_features, columns=['length', 

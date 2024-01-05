@@ -4,6 +4,8 @@ from textblob import TextBlob
 import spacy
 import numpy as np
 from collections import Counter
+from scipy import stats
+import pandas as pd
 
 def flesch_reading_ease(article):
     words = article.split()
@@ -52,3 +54,26 @@ def count_transition_words(article):
     transition_words = ['however', 'furthermore', 'therefore', 'consequently', 'meanwhile', 'nonetheless', 'moreover', 'likewise', 'instead', 'nevertheless', 'otherwise', 'similarly', 'accordingly', 'subsequently', 'hence', 'thus', 'still', 'then', 'yet', 'accordingly', 'additionally', 'alternatively', 'besides', 'comparatively', 'conversely', 'finally', 'further', 'furthermore', 'hence', 'however', 'indeed', 'instead', 'likewise', 'meanwhile', 'moreover', 'nevertheless', 'next', 'nonetheless', 'otherwise', 'similarly', 'still', 'subsequently', 'then', 'therefore', 'thus', 'whereas', 'while', 'yet'] 
     count = sum(article.count(word) for word in transition_words)
     return count
+
+def perplexity_ks_test(baseline_perplexities, article_perplexity_scores):
+    _, p_value = stats.ks_2samp(baseline_perplexities, article_perplexity_scores)
+    if p_value < 0.05:
+        return -1
+    else:
+        return 1
+    
+def perplexity_ad_test(baseline_perplexities, article_perplexity_scores):
+    _, p_value = stats.ttest_ind(baseline_perplexities, article_perplexity_scores, equal_var=True)
+    if p_value < 0.05:
+        return -1
+    else:
+        return 1
+
+def perplexity_t_test(article_perplexity_scores):
+    result = stats.anderson(article_perplexity_scores, dist='norm')
+    for i in range(len(result.critical_values)):
+        sl, cv = result.significance_level[i], result.critical_values[i]
+        if result.statistic > cv:
+            return -1
+        else:
+            return 1
