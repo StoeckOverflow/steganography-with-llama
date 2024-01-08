@@ -3,10 +3,11 @@ import random
 import string
 import json
 import os
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
 from llama_cpp import Llama
-from utils import get_perplexity
+from ...utils.llama_utils import get_perplexity
 from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
 
@@ -65,7 +66,8 @@ def create_newsfeed_dataset():
     - 30% Synonym Hider
     - 40 % Clean Feeds
     '''
-    articles_path = 'resources/feeds/clean_feeds'
+    articles_path_glob = 'resources/feeds/clean_feeds/*.json'  # Adjust the pattern if needed
+    articles = glob.glob(articles_path_glob)
     doctored_articles_path = 'resources/feeds/doctored_feeds_new'
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
@@ -74,21 +76,25 @@ def create_newsfeed_dataset():
     synonym_hider = SynonymHider(disable_tqdm=False)
     
     i = 0
-    for path in articles_path:
+    for path in articles:
         
-        print(f"Current File: {path.split('/')[-1]}\nNumber: {i}")
-        parsed_feed = json.loads(path)
+        print(f"Current File: {path}\nNumber: {i}")
+        with open(path, 'r') as file:
+            parsed_feed = json.load(file)
         feed_array = parsed_feed['feed']
         feed_secret = parsed_feed['secret']
         
         if i <= 4:
             doctored_newsfeeds = synonym_hider.hide_secret(feed_array, feed_secret, output='json')
         if i > 4 and i < 8:
-            doctored_newsfeeds = dynamic_poe.hide(feed_array, feed_secret)
+            doctored_newsfeeds = dynamic_poe.hide(feed_secret, feed_array)
         if i > 8:
             doctored_newsfeeds = feed_array #newsfeed is not processed
 
         formatted_number = "{:03d}".format(i)
+        file_name = f"doctored_feed_{formatted_number}.json"
+        print(f"Suggested Path: {os.path.join(doctored_articles_path, file_name)}")
+        
         with open(os.path.join(doctored_articles_path,f"doctored_feed_{formatted_number}.json"),'w') as file:
             json.dump(doctored_newsfeeds, file, indent=4)
 
@@ -121,5 +127,4 @@ def create_new_feeds_of_kaggle_dataset():
         json.dump(feed, open(save_path, 'w'), indent=4)
 
 if __name__ == '__main__':
-    perplexity_scores = create_newsfeed_dataset()
-    plot_perplexity_statistics(perplexity_scores)
+    create_newsfeed_dataset()
