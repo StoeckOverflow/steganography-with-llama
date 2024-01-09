@@ -41,17 +41,17 @@ class DynamicPOE:
             else:
                 return x+i-i_step
 
-    def hide(self, message: str, news_feed: List[str], try_extra_compression: bool = True) -> Dict[str, list[str]]:
+    def hide(self, message: str, news_feed: List[str], try_extra_compression: bool = True, nr_prompt_words: int = 5) -> Dict[str, list[str]]:
         bits_per_decimal = self.get_highest_compression(message) if try_extra_compression else np.pi
         encoded_msg = self.codec.encode(message, bits_per_decimal)
         encoded_binary_messages = Dec2BinConverter.get_bin_from_decimal(encoded_msg, bits_per_token=self.hider.bits_per_token)
-        doctored_news_feed = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages)
+        doctored_news_feed = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages, nr_prompt_words=nr_prompt_words)
         return doctored_news_feed
     
-    def recover(self, doctored_news_feed: List[str], vocabulary: Iterable = None) -> Dict[str, str]:
+    def recover(self, doctored_news_feed: List[str], vocabulary: Iterable = None, nr_prompt_words: int = 5) -> Dict[str, str]:
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
-        decoded_binary_messages = self.hider.retrieve_multiple_secrets_from_news_feed(doctored_news_feed)
+        decoded_binary_messages = self.hider.retrieve_multiple_secrets_from_news_feed(doctored_news_feed, nr_prompt_words=nr_prompt_words)
         decoded_encoded_msg = Dec2BinConverter.get_decimal_from_bin(*decoded_binary_messages)
         decoded_msg = self.codec.decode(decoded_encoded_msg, vocabulary)
         return {"secret": decoded_msg}
