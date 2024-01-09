@@ -57,7 +57,7 @@ class SynonymHashCodec(Codec):
         stego_text = self._tokenizer.decode(input_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
         return stego_text, binary_secret
     
-    def encode_newsfeed(self, news_feed: list[str], binary_secret: str, **kwargs) -> str:
+    def encode_newsfeed(self, news_feed: list[str], binary_secret: str, labeled_for_training_flag=False, **kwargs) -> str:
         doctored_newsfeed = []
         for feed in tqdm(news_feed,desc='Encode Newsfeed', disable=self.disable_tqdm):
             stego_text, binary_secret_string = self.encode_single_string(feed, binary_secret)
@@ -65,8 +65,10 @@ class SynonymHashCodec(Codec):
             binary_secret = binary_secret[len(binary_secret_string):]
             if len(binary_secret) == 0:
                 break
-        
-        return doctored_newsfeed + news_feed[len(doctored_newsfeed):]
+        if labeled_for_training_flag:
+            return doctored_newsfeed + news_feed[len(doctored_newsfeed):], len(news_feed[len(doctored_newsfeed):])
+        else:
+            return doctored_newsfeed + news_feed[len(doctored_newsfeed):]
     
     def decode_single_string(self, newsfeed:str, mask_interval: int = 3, score_threshold: float = 0.005) -> str:
         decoded_message: List[str] = []
@@ -95,7 +97,6 @@ class SynonymHashCodec(Codec):
         
         return decode_secret(''.join(remaining_decoded_secret))    
 
-    
     def _predict(self, input_ids: Union[Tensor, List[List[int]]]):
         self._model.eval()
         with torch.no_grad():

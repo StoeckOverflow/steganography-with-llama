@@ -1,11 +1,9 @@
 from typing import Union
 from collections.abc import Iterable
 import sys
-
 import numpy as np
 import json
 from llama_cpp import Llama
-
 from ..codecs import DynamicArithmeticEncoding
 from ..utils import Dec2BinConverter
 from ..hiders import ArithmeticProbOrdHider
@@ -41,12 +39,16 @@ class DynamicPOE:
             else:
                 return x+i-i_step
 
-    def hide(self, message: str, news_feed: list[str], try_extra_compression: bool = True) -> dict[str, list[str]]:
+    def hide(self, message: str, news_feed: list[str], try_extra_compression: bool = True, labeled_for_training_flag=False) -> dict[str, list[str]]:
         bits_per_decimal = self.get_highest_compression(message) if try_extra_compression else np.pi
         encoded_msg = self.codec.encode(message, bits_per_decimal)
         encoded_binary_messages = Dec2BinConverter.get_bin_from_decimal(encoded_msg, bits_per_token=self.hider.bits_per_token)
-        doctored_news_feed = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages)
-        return doctored_news_feed
+        if labeled_for_training_flag:
+            doctored_news_feed, length_rest = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages, labeled_for_training_flag=labeled_for_training_flag)
+            return doctored_news_feed, length_rest
+        else:
+            doctored_news_feed = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages)
+            return doctored_news_feed
     
     def recover(self, doctored_news_feed: list[str], vocabulary: Iterable = None) -> dict[str, str]:
         if vocabulary is None:

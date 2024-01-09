@@ -6,6 +6,7 @@ from ...utils.string_modification import clean
 from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
 import matplotlib.pyplot as plt
 import numpy as np
+import glob
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
@@ -14,16 +15,16 @@ import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import f1_score, precision_score
 from sklearn.inspection import permutation_importance
-import os
 from sklearn.decomposition import PCA
+import json
 
 class Anomaly_Seeker(Seeker):
     
     def __init__(self, disable_tqdm=False) -> None:
         super().__init__(disable_tqdm)
         perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
-        self.mean_perplexity = perplexity_statistics['Mean Perplexity']
-        self.std_perplexity = perplexity_statistics['Standard Deviation']
+        self.mean_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Mean Perplexity']['Value'].iloc[0]
+        self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
 
     def extract_features(self,articles):
         features = []
@@ -45,7 +46,7 @@ class Anomaly_Seeker(Seeker):
             repetition = repetition_patterns(article)
             
             # Llama Features
-            probs = get_probabilities(self.llm, article)
+            probs = get_probabilities(self.base_model, article)
             avg_token_probability = np.mean(probs)
             
             # Reflects the diversity or uncertainty of token predictions.
@@ -55,11 +56,11 @@ class Anomaly_Seeker(Seeker):
             # 1 Compute the entropy of the token distribution at each position in the text.
             # 2 Assess the log-probability of the actual token at each position.
             # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
-            entropy = get_entropy(self.llm, article)
+            entropy = get_entropy(self.base_model, article)
             
             # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
             # Lower values indicate a more predictable and effective model
-            perplexity_scaled = (get_perplexity(self.llm, article) - self.std_perplexity) / self.mean_perplexity
+            perplexity_scaled = (get_perplexity(self.base_model, article) - self.std_perplexity) / self.mean_perplexity
 
             article_features = [length, 
                                 avg_sentence_length, 
@@ -79,7 +80,8 @@ class Anomaly_Seeker(Seeker):
         
         scaler = StandardScaler()
         transformed_features = scaler.fit_transform(features)
-        df = pd.DataFrame(transformed_features, columns=['length', 
+        df = pd.DataFrame(transformed_features, columns=[
+                                                        'length', 
                                                         'avg_sentence_length', 
                                                         'type_token_ratio', 
                                                         'flesch_score', 
@@ -90,6 +92,7 @@ class Anomaly_Seeker(Seeker):
                                                         'named_entities', 
                                                         'repetition', 
                                                         'avg_token_probability',
+                                                        'perplexity_scaled'
                                                         ])
         return df
 
@@ -107,36 +110,54 @@ class Anomaly_Seeker(Seeker):
         print(clf.cv_results_)
         print(clf.score(X_test, y_test))
     
-    def train_model(self,benign_data_path, malicious_data_path, permutation_importance_flag=True):
+    def train_model(self, permutation_importance_flag=True, plotting_flag=True):
         print('Training model...')
+        feature_set = pd.DataFrame(columns=['length', 
+                                            'avg_sentence_length', 
+                                            'type_token_ratio', 
+                                            'flesch_score', 
+                                            'vocab_richness', 
+                                            'num_special_chars', 
+                                            'entropy', 
+                                            'sentiment', 
+                                            'named_entities', 
+                                            'repetition', 
+                                            'avg_token_probability'])
+        labels = []
+        news_feeds_directory_path = 'resources/feeds/doctored_feeds_new/*.json'
+        feed_paths = glob.glob(news_feeds_directory_path)
+        for feed_path in tqdm(feed_paths, desc='Features extracted of feed paths'):
+            with open(feed_path, 'r') as file:
+                parsed_feed = json.load(file)
+            feed_array = parsed_feed['feed']
+            feed_labels = parsed_feed['labels']
+            feature_set = pd.concat([feature_set, self.extract_features(feed_array)], ignore_index=True)
+            labels.append(feed_labels)
         
-        dataset = create_dataset(benign_data_path, malicious_data_path)
-        articles = dataset['article']
-        labels = dataset['label']
-        
-        features = self.extract_features(articles)
-
-        X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=420, stratify=labels)
+        X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
         clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
         clf = clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
+        
         print(f"Precision: {precision_score(y_test, y_pred)}")
         print(f"F1 Score: {f1_score(y_test, y_pred)}")
         
         if permutation_importance_flag:
-            feature_importance_results = permutation_importance(clf, features, y_pred, scoring='accuracy')
+            feature_importance_results = permutation_importance(clf, feature_set, y_pred, scoring='accuracy')
             importances = feature_importance_results.importances_mean
             
             # Plot the Permutation Importance
-            feature_names = np.array(features.columns)
-
-            # Plotting
+            feature_names = np.array(feature_set.columns)
             plt.figure(figsize=(20, 8))
             plt.barh(feature_names, importances)
             plt.xlabel('Mean decrease in accuracy')
             plt.ylabel('Feature')
             plt.title('Feature importance')
             plt.savefig(f"permutation_importance_RandomForest.png")
+        
+        if plotting_flag:
+            feature_set['predictions'] = y_pred
+            self.plot_predictions(feature_set)
         
         joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
     
@@ -155,50 +176,25 @@ class Anomaly_Seeker(Seeker):
             return True #-1
         else:
             return False #1
-
-    def train_and_test_with_own_feeds(self):
-        #benign_data_path = 'resources/feeds/clean_feeds.zip'
-        #malicious_data_path = 'resources/doctored_feeds/doctored_feeds.zip'
-        #train_model(benign_data_path, malicious_data_path)
-        malicious_dir_path = 'resources/doctored_feeds/'
-        for feed in os.listdir(malicious_dir_path):
-            if feed.endswith('.zip'):
-                continue
-            feed_path = os.path.join(malicious_dir_path, feed)
-            result = self.predict_single_feed(feed_path)
-            true_label = -1
-            print(f"Prediction for {feed}: {result} ({result == true_label})")
-
-        benign_dir_path = 'resources/feeds/'
-        for feed in os.listdir(benign_dir_path):
-            if feed.endswith('.zip'):
-                continue
-            feed_path = os.path.join(benign_dir_path, feed)
-            result = self.predict_single_feed(feed_path)
-            true_label = 1
-            print(f"Prediction for {feed}: {result} ({result == true_label})")
        
-    def plot_predictions(df, ftp_traffic=None, modelname='IsolationForest'):
+    def plot_predictions(df, modelname='RandomForest'):
+        predictions = df.predictions
+        features = df.drop(columns=['predictions'])
         
-        def apply_PCA(features, n_components=2):
+        def apply_PCA(df, n_components=2):
             pca = PCA(n_components=n_components)
-            pca.fit(features)
-            return pca.transform(features)
-        
-        predictions = df.prediction
-        features = df.drop(columns=['prediction', 'text_num'])
+            pca.fit(df)
+            return pca.transform(df)
 
-        principle_components = apply_PCA(features)
+        principle_components = apply_PCA()
         df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
-        df_pca['prediction'] = predictions
-        df_pca['text_num'] = df['text_num']
+        df_pca['predictions'] = predictions
 
         df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
         plt.savefig(f"predictions_{modelname}.png")
 
-        outliers = df_pca[df_pca['prediction'] == 0]
-        outlier_data = outliers[['text_num', 'x', 'y']]
+        outliers = df_pca[df_pca['prediction'] == -1]
+        outlier_data = outliers[['x', 'y']]
         print(f"Number of Outliers: {len(outlier_data)}")
-        if ftp_traffic is not None:
-            outlier_data = outlier_data.merge(ftp_traffic, on='text_num', how='left')
+
         outlier_data.to_csv(f"outliers_{modelname}.csv", index=False)

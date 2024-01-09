@@ -12,21 +12,22 @@ from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
 
 def evaluate_perplexity_threshold(llm: Llama):
-    articles_path = 'resources/feeds/clean_feeds'
+    feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
+    feeds = glob.glob(feeds_path_glob)
     perplexity_scores = []
     i = 0
-    for path in articles_path:
+    for path in feeds:
         
         print(f"Current File: {path.split('/')[-1]}\nNumber: {i}")
-        parsed_feed = json.loads(path)
+        with open(path, 'r') as file:
+            parsed_feed = json.load(file)
         feed_array = parsed_feed['feed']
         for feed in feed_array:
             perplexity_scores.append(get_perplexity(llm, feed))
         i += 1
     return perplexity_scores
 
-def plot_perplexity_statistics(perplexity_scores):
-
+def plot_and_save_perplexity_statistics(perplexity_scores):
     # Basic Statistical Analysis
     mean_score = np.mean(perplexity_scores)
     median_score = np.median(perplexity_scores)
@@ -66,8 +67,13 @@ def create_newsfeed_dataset():
     - 30% Synonym Hider
     - 40 % Clean Feeds
     '''
-    articles_path_glob = 'resources/feeds/clean_feeds/*.json'  # Adjust the pattern if needed
-    articles = glob.glob(articles_path_glob)
+    feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
+    feeds = glob.glob(feeds_path_glob)
+    
+    num_feeds = len(feeds)
+    num_arithmetic = int(num_feeds * 0.3)
+    num_synonym = int(num_feeds * 0.3)
+    
     doctored_articles_path = 'resources/feeds/doctored_feeds_new'
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
@@ -75,8 +81,9 @@ def create_newsfeed_dataset():
     dynamic_poe = DynamicPOE(disable_tqdm=False)
     synonym_hider = SynonymHider(disable_tqdm=False)
     
-    i = 0
-    for path in articles:
+    i, arithmetic_count, synonym_count = 0, 0, 0
+    
+    for path in feeds:
         
         print(f"Current File: {path}\nNumber: {i}")
         with open(path, 'r') as file:
@@ -84,19 +91,30 @@ def create_newsfeed_dataset():
         feed_array = parsed_feed['feed']
         feed_secret = parsed_feed['secret']
         
-        if i <= 4:
-            doctored_newsfeeds = synonym_hider.hide_secret(feed_array, feed_secret, output='json')
-        if i > 4 and i < 8:
-            doctored_newsfeeds = dynamic_poe.hide(feed_secret, feed_array)
-        if i > 8:
-            doctored_newsfeeds = feed_array #newsfeed is not processed
+        result_newsfeed = {'feed': [], 'labels': []}
+        
+        if synonym_count < num_arithmetic:
+            doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
+            labels = [-1] * (30 - rest_length) + [1] * rest_length
+            result_newsfeed['feed'] = doctored_newsfeeds
+            result_newsfeed['labels'] = labels
+            synonym_count += 1
+        elif arithmetic_count < num_synonym:
+            doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+            labels = [-1] * (30 - rest_length) + [1] * rest_length
+            result_newsfeed['feed'] = doctored_newsfeeds['feed']
+            result_newsfeed['labels'] = labels
+            arithmetic_count += 1
+        else:
+            #newsfeed is not processed
+            labels = [1] * 30
+            result_newsfeed['feed'] = feed_array
+            result_newsfeed['labels'] = labels
 
         formatted_number = "{:03d}".format(i)
-        file_name = f"doctored_feed_{formatted_number}.json"
-        print(f"Suggested Path: {os.path.join(doctored_articles_path, file_name)}")
         
         with open(os.path.join(doctored_articles_path,f"doctored_feed_{formatted_number}.json"),'w') as file:
-            json.dump(doctored_newsfeeds, file, indent=4)
+            json.dump(result_newsfeed, file, indent=4)
 
         i += 1
 
@@ -126,5 +144,3 @@ def create_new_feeds_of_kaggle_dataset():
         feed = {'feed': articles.to_list(), 'secret': secret}
         json.dump(feed, open(save_path, 'w'), indent=4)
 
-if __name__ == '__main__':
-    create_newsfeed_dataset()
