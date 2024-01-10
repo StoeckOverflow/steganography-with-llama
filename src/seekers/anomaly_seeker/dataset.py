@@ -60,13 +60,23 @@ def plot_and_save_perplexity_statistics(perplexity_scores):
     df = pd.DataFrame(data)
     df.to_csv('resources/perplexity_statistics.csv', index=False)
 
-def create_newsfeed_dataset():
+def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
     '''
-    Create a newsfeed dataset:
+    Create a newsfeed learning dataset for the seekers with following proportions:
     - 30% Arithmetic Encoding Hider
     - 30% Synonym Hider
     - 40 % Clean Feeds
+    
+    2 Options:
+    newsfeed_or_article_labeling='article':
+        - label each article with either 1 or -1
+        - saved per newsfeed in Format. {'feed': [], 'labels': []}
+    newsfeed_or_article_labeling='newsfeed'
+        - label each newsfeed with either 1 or -1
+        - saved per newsfeed in Format {'feed': []}
+        - Label is saved in the filename doctored_feed_{formatted_number}.json;{label}
     '''
+    
     feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
     feeds = glob.glob(feeds_path_glob)
     
@@ -74,7 +84,7 @@ def create_newsfeed_dataset():
     num_arithmetic = int(num_feeds * 0.3)
     num_synonym = int(num_feeds * 0.3)
     
-    doctored_articles_path = 'resources/feeds/doctored_feeds_new'
+    doctored_articles_path = 'resources/feeds/doctored_feeds'
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
     
@@ -83,41 +93,73 @@ def create_newsfeed_dataset():
     
     i, arithmetic_count, synonym_count = 0, 0, 0
     
-    for path in feeds:
-        
-        print(f"Current File: {path}\nNumber: {i}")
-        with open(path, 'r') as file:
-            parsed_feed = json.load(file)
-        feed_array = parsed_feed['feed']
-        feed_secret = parsed_feed['secret']
-        
-        result_newsfeed = {'feed': [], 'labels': []}
-        
-        if synonym_count < num_arithmetic:
-            doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
-            labels = [-1] * (30 - rest_length) + [1] * rest_length
-            result_newsfeed['feed'] = doctored_newsfeeds
-            result_newsfeed['labels'] = labels
-            synonym_count += 1
-        elif arithmetic_count < num_synonym:
-            doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
-            labels = [-1] * (30 - rest_length) + [1] * rest_length
-            result_newsfeed['feed'] = doctored_newsfeeds['feed']
-            result_newsfeed['labels'] = labels
-            arithmetic_count += 1
-        else:
-            #newsfeed is not processed
-            labels = [1] * 30
-            result_newsfeed['feed'] = feed_array
-            result_newsfeed['labels'] = labels
+    if newsfeed_or_article_labeling == 'article':
+        for path in feeds:
+            print(f"Current File: {path}\nNumber: {i}")
+            with open(path, 'r') as file:
+                parsed_feed = json.load(file)
+            feed_array = parsed_feed['feed']
+            feed_secret = parsed_feed['secret']
+            
+            result_newsfeed = {'feed': [], 'labels': []}
+            
+            if synonym_count < num_arithmetic:
+                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
+                labels = [-1] * (30 - rest_length) + [1] * rest_length
+                result_newsfeed['feed'] = doctored_newsfeeds
+                result_newsfeed['labels'] = labels
+                synonym_count += 1
+            elif arithmetic_count < num_synonym:
+                doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+                labels = [-1] * (30 - rest_length) + [1] * rest_length
+                result_newsfeed['feed'] = doctored_newsfeeds['feed']
+                result_newsfeed['labels'] = labels
+                arithmetic_count += 1
+            else: #newsfeed is not processed
+                labels = [1] * 30
+                result_newsfeed['feed'] = feed_array
+                result_newsfeed['labels'] = labels
 
-        formatted_number = "{:03d}".format(i)
+            formatted_number = "{:03d}".format(i)
+            
+            with open(os.path.join(doctored_articles_path,f"doctored_feed_{formatted_number}.json"),'w') as file:
+                json.dump(result_newsfeed, file, indent=4)
+
+            i += 1
+    
+    elif newsfeed_or_article_labeling == 'newsfeed':
+        for path in feeds:
+            print(f"Current File: {path}\nNumber: {i}")
+            
+            
+            with open(path, 'r') as file:
+                parsed_feed = json.load(file)
+
+            feed_array = parsed_feed['feed']
+            feed_secret = parsed_feed['secret']
+            result_newsfeed = {'feed': []}
+            
+            if synonym_count < num_arithmetic:
+                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
+                label = -1
+                result_newsfeed['feed'] = doctored_newsfeeds
+                synonym_count += 1
+            elif arithmetic_count < num_synonym:
+                doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+                label = -1
+                result_newsfeed['feed'] = doctored_newsfeeds['feed']
+                arithmetic_count += 1
+            else: #newsfeed is not processed
+                label = 1
+                result_newsfeed['feed'] = feed_array
+
+            formatted_number = "{:03d}".format(i)
+            
+            with open(os.path.join(doctored_articles_path, f"doctored_feed_{formatted_number}.json;{label}"), 'w') as file:
+                json.dump(result_newsfeed, file, indent=4)
+
+            i += 1
         
-        with open(os.path.join(doctored_articles_path,f"doctored_feed_{formatted_number}.json"),'w') as file:
-            json.dump(result_newsfeed, file, indent=4)
-
-        i += 1
-
 def create_random_secret(seed):
     random.seed(seed)
     return ''.join(random.choice(string.ascii_letters) for i in range(220))
@@ -143,4 +185,3 @@ def create_new_feeds_of_kaggle_dataset():
 
         feed = {'feed': articles.to_list(), 'secret': secret}
         json.dump(feed, open(save_path, 'w'), indent=4)
-

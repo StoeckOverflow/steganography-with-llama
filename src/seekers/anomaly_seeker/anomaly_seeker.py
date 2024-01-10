@@ -17,6 +17,7 @@ from sklearn.metrics import f1_score, precision_score
 from sklearn.inspection import permutation_importance
 from sklearn.decomposition import PCA
 import json
+import os
 
 class Anomaly_Seeker(Seeker):
     
@@ -26,7 +27,7 @@ class Anomaly_Seeker(Seeker):
         self.mean_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Mean Perplexity']['Value'].iloc[0]
         self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
 
-    def extract_features(self,articles):
+    def extract_features_in_articles(self,articles):
         features = []
         for article in tqdm(articles, desc='Extracting features', disable=self.disable_tqdm):
             article = str(article)
@@ -46,7 +47,7 @@ class Anomaly_Seeker(Seeker):
             repetition = repetition_patterns(article)
             
             # Llama Features
-            probs = get_probabilities(self.base_model, article)
+            probs = get_probabilities(self.base_model, tokens, article)
             avg_token_probability = np.mean(probs)
             
             # Reflects the diversity or uncertainty of token predictions.
@@ -56,11 +57,12 @@ class Anomaly_Seeker(Seeker):
             # 1 Compute the entropy of the token distribution at each position in the text.
             # 2 Assess the log-probability of the actual token at each position.
             # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
-            entropy = get_entropy(self.base_model, article)
+            entropy = get_entropy(probs)
             
             # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
             # Lower values indicate a more predictable and effective model
-            perplexity_scaled = (get_perplexity(self.base_model, article) - self.std_perplexity) / self.mean_perplexity
+            perplexity = get_perplexity(probs, tokens)
+            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
 
             article_features = [length, 
                                 avg_sentence_length, 
@@ -96,6 +98,147 @@ class Anomaly_Seeker(Seeker):
                                                         ])
         return df
 
+    def extract_features_and_labels_in_articles(self, newsfeeds_directory_path, save_flag=True):
+        print('Start Feature Extraction...')
+        feature_set = pd.DataFrame(columns=['length', 
+                                            'avg_sentence_length', 
+                                            'type_token_ratio', 
+                                            'flesch_score', 
+                                            'vocab_richness', 
+                                            'num_special_chars', 
+                                            'entropy', 
+                                            'sentiment', 
+                                            'named_entities', 
+                                            'repetition', 
+                                            'avg_token_probability'])
+        newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
+        all_labels = []
+        feed_paths = glob.glob(newsfeeds_files_pattern)
+        for feed_path in feed_paths:
+            with open(feed_path, 'r') as file:
+                parsed_feed = json.load(file)
+            feed_array = parsed_feed['feed']
+            feed_labels = parsed_feed['labels']
+            new_features = self.extract_features_in_articles(feed_array)
+            feature_set = pd.concat([feature_set, new_features], ignore_index=True)
+            all_labels.extend(feed_labels)
+        
+        feature_set['label'] = all_labels
+        
+        if save_flag:
+            print('Save feature_set to csv...')
+            feature_set.to_csv('resources/feature_set_articles.csv', index=False)
+            print('feature-set saved')
+        
+        return feature_set
+    
+    '''
+    ToDo:
+     - Refine method with new feature set
+    '''
+    def extract_features_in_newsfeeds(self, newsfeeds):
+
+        features = []
+        for article in tqdm(newsfeeds, desc='Extracting features', disable=self.disable_tqdm):
+            article = str(article)
+            
+            # Standard Text Features
+            tokens = self.base_model.tokenizer().encode(article)
+            length = len(article)
+            sentences = article.split('.')
+            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
+            type_token_ratio = len(set(tokens)) / len(tokens) if len(tokens) > 0 else 0
+            flesch_score = flesch_reading_ease(article)
+            vocab_richness = len(set(tokens)) / length if length > 0 else 0
+            num_special_chars = special_chars_count(article)
+            entropy = shannon_entropy(article)
+            sentiment = sentiment_consistency(article)
+            named_entities = named_entity_analysis(article)
+            repetition = repetition_patterns(article)
+            
+            # Llama Features
+            probs = get_probabilities(self.base_model, tokens, article)
+            avg_token_probability = np.mean(probs)
+            
+            # Reflects the diversity or uncertainty of token predictions.
+            # Tokens with low log-probability are less suspicious in high-entropy (uniform) distributions
+            # High Entropy: Indicates uncertainty, many tokens are equally likely
+            # Low Entropy: (Spiky Distribution): Indicates certainty, fewer tokens are likely
+            # 1 Compute the entropy of the token distribution at each position in the text.
+            # 2 Assess the log-probability of the actual token at each position.
+            # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
+            entropy = get_entropy(probs)
+            
+            # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
+            # Lower values indicate a more predictable and effective model
+            perplexity = get_perplexity(probs, tokens)
+            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
+
+            article_features = [length, 
+                                avg_sentence_length, 
+                                type_token_ratio, 
+                                flesch_score, 
+                                vocab_richness, 
+                                num_special_chars, 
+                                entropy, 
+                                sentiment, 
+                                named_entities, 
+                                repetition, 
+                                avg_token_probability,
+                                perplexity_scaled
+                                ]
+            
+            features.append(article_features)
+        
+        scaler = StandardScaler()
+        transformed_features = scaler.fit_transform(features)
+        df = pd.DataFrame(transformed_features, columns=[
+                                                        'length', 
+                                                        'avg_sentence_length', 
+                                                        'type_token_ratio', 
+                                                        'flesch_score', 
+                                                        'vocab_richness', 
+                                                        'num_special_chars', 
+                                                        'entropy', 
+                                                        'sentiment', 
+                                                        'named_entities', 
+                                                        'repetition', 
+                                                        'avg_token_probability',
+                                                        'perplexity_scaled'
+                                                        ])
+        return df
+
+    def extract_features_and_labels_in_newsfeeds(self, newsfeeds_directory_path, save_flag=True):
+        print('Start Feature Extraction...')
+        feature_set = pd.DataFrame(columns=['length', 
+                                            'avg_sentence_length', 
+                                            'type_token_ratio', 
+                                            'flesch_score', 
+                                            'vocab_richness', 
+                                            'num_special_chars', 
+                                            'entropy', 
+                                            'sentiment', 
+                                            'named_entities', 
+                                            'repetition', 
+                                            'avg_token_probability'])
+        
+        newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
+        feed_paths = glob.glob(newsfeeds_files_pattern)
+        for feed_path in feed_paths:
+            with open(feed_path, 'r') as file:
+                parsed_feed = json.load(file)
+            feed_array = parsed_feed['feed']
+            new_features = self.extract_features(feed_array)
+            new_features['label'] = feed_path.split(';')[1]
+            feature_set = pd.concat([feature_set, new_features], ignore_index=True)
+        
+        if save_flag:
+            print('Save feature_set to csv...')
+            feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
+            print('feature-set saved')
+        
+        return feature_set
+       
     def gridSearch(self, features, labels):
         'Gridsearch with Cross Validation'
 
@@ -111,29 +254,16 @@ class Anomaly_Seeker(Seeker):
         print(clf.score(X_test, y_test))
     
     def train_model(self, permutation_importance_flag=True, plotting_flag=True):
-        print('Training model...')
-        feature_set = pd.DataFrame(columns=['length', 
-                                            'avg_sentence_length', 
-                                            'type_token_ratio', 
-                                            'flesch_score', 
-                                            'vocab_richness', 
-                                            'num_special_chars', 
-                                            'entropy', 
-                                            'sentiment', 
-                                            'named_entities', 
-                                            'repetition', 
-                                            'avg_token_probability'])
-        labels = []
-        news_feeds_directory_path = 'resources/feeds/doctored_feeds_new/*.json'
-        feed_paths = glob.glob(news_feeds_directory_path)
-        for feed_path in tqdm(feed_paths, desc='Features extracted of feed paths'):
-            with open(feed_path, 'r') as file:
-                parsed_feed = json.load(file)
-            feed_array = parsed_feed['feed']
-            feed_labels = parsed_feed['labels']
-            feature_set = pd.concat([feature_set, self.extract_features(feed_array)], ignore_index=True)
-            labels.append(feed_labels)
         
+        try:
+            feature_set = pd.read_csv('resources/feature-set.csv')
+        except FileNotFoundError:
+            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds')
+        
+        labels = feature_set.labels
+        feature_set = feature_set.drop(columns=['labels'])
+        
+        print('Training model...')
         X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
         clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
         clf = clf.fit(X_train, y_train)
@@ -143,6 +273,7 @@ class Anomaly_Seeker(Seeker):
         print(f"F1 Score: {f1_score(y_test, y_pred)}")
         
         if permutation_importance_flag:
+            print('Calculate Permutation Importance')
             feature_importance_results = permutation_importance(clf, feature_set, y_pred, scoring='accuracy')
             importances = feature_importance_results.importances_mean
             
