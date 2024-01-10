@@ -11,7 +11,17 @@ from ...utils.llama_utils import get_perplexity
 from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
 
-def evaluate_perplexity_threshold(llm: Llama):
+def evaluate_perplexity_threshold():
+    llm = Llama(
+            model_path='llama-2-7b.Q5_K_M.gguf',
+            verbose=False,        
+            logits_all=True,      
+            n_ctx=512,            # Maximum context size (number of tokens) the model can handle
+            n_batch=512,          # Number of tokens to process in one batch
+            n_threads=3,          # Number of threads llama operations can be processed
+            n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
+            use_mlock=True,        # Use mlock to prevent paging the model to disk (depends on your system's memory)
+        )
     feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
     feeds = glob.glob(feeds_path_glob)
     perplexity_scores = []
