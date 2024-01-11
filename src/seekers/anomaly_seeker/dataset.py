@@ -7,9 +7,10 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 from llama_cpp import Llama
-from ...utils.llama_utils import get_perplexity
+from ...utils.llama_utils import get_perplexity, get_probabilities
 from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
+import tqdm
 
 def evaluate_perplexity_threshold():
     llm = Llama(
@@ -33,7 +34,9 @@ def evaluate_perplexity_threshold():
             parsed_feed = json.load(file)
         feed_array = parsed_feed['feed']
         for feed in feed_array:
-            perplexity_scores.append(get_perplexity(llm, feed))
+            tokenized_feed = llm.tokenizer().encode(feed)
+            softmax_logits = get_probabilities(llm, tokenized_feed)
+            perplexity_scores.append(get_perplexity(softmax_logits, tokenized_feed))
         i += 1
     return perplexity_scores
 
@@ -98,13 +101,9 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
     
-    dynamic_poe = DynamicPOE(disable_tqdm=False)
-    synonym_hider = SynonymHider(disable_tqdm=False)
-    
     i, arithmetic_count, synonym_count = 0, 0, 0
-    
     if newsfeed_or_article_labeling == 'article':
-        for path in feeds:
+        for path in tqdm.tqdm(feeds, desc="Process feeds"):
             print(f"Current File: {path}\nNumber: {i}")
             with open(path, 'r') as file:
                 parsed_feed = json.load(file)
@@ -114,13 +113,21 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
             result_newsfeed = {'feed': [], 'labels': []}
             
             if synonym_count < num_arithmetic:
+                synonym_hider = SynonymHider(disable_tqdm=True)
                 doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
                 labels = [-1] * (30 - rest_length) + [1] * rest_length
                 result_newsfeed['feed'] = doctored_newsfeeds
                 result_newsfeed['labels'] = labels
                 synonym_count += 1
             elif arithmetic_count < num_synonym:
-                doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+                try:
+                    dynamic_poe = DynamicPOE(disable_tqdm=True)
+                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+                except IndexError:
+                    labels = [1] * 30
+                    result_newsfeed['feed'] = feed_array
+                    result_newsfeed['labels'] = labels
+                    continue
                 labels = [-1] * (30 - rest_length) + [1] * rest_length
                 result_newsfeed['feed'] = doctored_newsfeeds['feed']
                 result_newsfeed['labels'] = labels
@@ -138,7 +145,7 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
             i += 1
     
     elif newsfeed_or_article_labeling == 'newsfeed':
-        for path in feeds:
+        for path in tqdm.tqdm(feeds, desc="Process feeds"):
             print(f"Current File: {path}\nNumber: {i}")
             
             

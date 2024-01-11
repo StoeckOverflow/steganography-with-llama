@@ -119,7 +119,6 @@ def softmax(x):
     return e_x / e_x.sum(axis=-1, keepdims=True)
 
 def get_perplexity(softmax_logits, tokenized_text):
-
     log_likelihood = 0.0
     for i, token_id in enumerate(tokenized_text):
         prob = softmax_logits[i, token_id] if softmax_logits[i, token_id] != 0 else softmax_logits[i, token_id]+1e-10
