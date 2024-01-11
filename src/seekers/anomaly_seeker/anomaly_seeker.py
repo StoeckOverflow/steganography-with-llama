@@ -1,7 +1,6 @@
 from .features import *
 from ..seeker import Seeker
 from tqdm import tqdm
-from ...utils.file_loading import create_dataset
 from ...utils.string_modification import clean
 from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
 import matplotlib.pyplot as plt
@@ -13,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import f1_score, precision_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.inspection import permutation_importance
 from sklearn.decomposition import PCA
 import json
@@ -81,7 +80,15 @@ class Anomaly_Seeker(Seeker):
             features.append(article_features)
         
         scaler = StandardScaler()
-        transformed_features = scaler.fit_transform(features)
+        '''
+        columns_to_scale = ['length', 'avg_sentence_length','type_token_ratio', 'flesch_score', 'vocab_richness','num_special_chars', 'entropy', 
+                            'sentiment', 'named_entities', 'repetition', 'avg_token_probability'] 
+        columns_not_to_scale = [col for col in features.columns if col not in columns_to_scale]
+        '''
+        features_array = np.array(features)
+        transformed_features = scaler.fit_transform(features_array[:, :-1])
+        transformed_features = np.column_stack((transformed_features, features_array[:, -1]))
+        
         df = pd.DataFrame(transformed_features, columns=[
                                                         'length', 
                                                         'avg_sentence_length', 
@@ -110,7 +117,9 @@ class Anomaly_Seeker(Seeker):
                                             'sentiment', 
                                             'named_entities', 
                                             'repetition', 
-                                            'avg_token_probability'])
+                                            'avg_token_probability',
+                                            'perplexity_scaled'
+                                            ])
         newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
         all_labels = []
         feed_paths = glob.glob(newsfeeds_files_pattern)
@@ -120,6 +129,7 @@ class Anomaly_Seeker(Seeker):
             feed_array = parsed_feed['feed']
             feed_labels = parsed_feed['labels']
             new_features = self.extract_features_in_articles(feed_array)
+            print(new_features.head())
             feature_set = pd.concat([feature_set, new_features], ignore_index=True)
             all_labels.extend(feed_labels)
         
@@ -256,25 +266,25 @@ class Anomaly_Seeker(Seeker):
     def train_model(self, permutation_importance_flag=True, plotting_flag=True):
         
         try:
-            feature_set = pd.read_csv('resources/feature-set.csv')
+            feature_set = pd.read_csv('resources/feature_set_articles.csv')
         except FileNotFoundError:
             feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds')
         
-        labels = feature_set.labels
-        feature_set = feature_set.drop(columns=['labels'])
+        labels = feature_set.label
+        feature_set = feature_set.drop(columns=['label'])
         
         print('Training model...')
         X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
         clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
         clf = clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
-        
         print(f"Precision: {precision_score(y_test, y_pred)}")
         print(f"F1 Score: {f1_score(y_test, y_pred)}")
+        print(f"Recall: {recall_score(y_test, y_pred)}")
         
         if permutation_importance_flag:
             print('Calculate Permutation Importance')
-            feature_importance_results = permutation_importance(clf, feature_set, y_pred, scoring='accuracy')
+            feature_importance_results = permutation_importance(clf, X_test, y_pred, scoring='accuracy')
             importances = feature_importance_results.importances_mean
             
             # Plot the Permutation Importance
@@ -287,8 +297,10 @@ class Anomaly_Seeker(Seeker):
             plt.savefig(f"permutation_importance_RandomForest.png")
         
         if plotting_flag:
-            feature_set['predictions'] = y_pred
-            self.plot_predictions(feature_set)
+            x_test_dataframe = pd.DataFrame(X_test)
+            x_test_dataframe['prediction'] = y_pred
+            x_test_dataframe = x_test_dataframe.reset_index(drop=True)
+            self.plot_predictions(x_test_dataframe)
         
         joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
     
@@ -308,24 +320,27 @@ class Anomaly_Seeker(Seeker):
         else:
             return False #1
        
-    def plot_predictions(df, modelname='RandomForest'):
-        predictions = df.predictions
-        features = df.drop(columns=['predictions'])
+    def plot_predictions(self, df, modelname='RandomForest'):
+        predictions = df.prediction
+        print(predictions)
+        features = df.drop(columns=['prediction'])
         
-        def apply_PCA(df, n_components=2):
-            pca = PCA(n_components=n_components)
-            pca.fit(df)
-            return pca.transform(df)
-
-        principle_components = apply_PCA()
+        principle_components = self.apply_PCA(df)
         df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
-        df_pca['predictions'] = predictions
-
+        df_pca['prediction'] = predictions
+        print(df_pca)
         df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
+        
         plt.savefig(f"predictions_{modelname}.png")
-
+        
         outliers = df_pca[df_pca['prediction'] == -1]
+        print(df_pca)
         outlier_data = outliers[['x', 'y']]
         print(f"Number of Outliers: {len(outlier_data)}")
 
         outlier_data.to_csv(f"outliers_{modelname}.csv", index=False)
+        
+    def apply_PCA(self, df, n_components=2):
+            pca = PCA(n_components=n_components)
+            pca.fit(df)
+            return pca.transform(df)
