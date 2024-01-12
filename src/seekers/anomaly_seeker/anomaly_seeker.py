@@ -318,14 +318,14 @@ class Anomaly_Seeker(Seeker):
             plt.xlabel('Mean decrease in accuracy')
             plt.ylabel('Feature')
             plt.title('Feature importance')
-            plt.savefig(f"permutation_importance_RandomForest.png")
+            plt.savefig(f"permutation_importance_{modelName}.png")
         
         if plotting_flag:
             print('Plot Prediction')
             x_test_dataframe = pd.DataFrame(X_test)
             x_test_dataframe['prediction'] = y_pred
             x_test_dataframe = x_test_dataframe.reset_index(drop=True)
-            self.plot_predictions(x_test_dataframe)
+            self.plot_predictions(x_test_dataframe, modelName)
         
         joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
     
@@ -345,7 +345,7 @@ class Anomaly_Seeker(Seeker):
         else:
             return False #1
        
-    def plot_predictions(self, df, modelname='RandomForest'):
+    def plot_predictions(self, df, modelname='RFC'):
         predictions = df.prediction
         features = df.drop(columns=['prediction'])
         
