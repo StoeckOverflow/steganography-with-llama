@@ -13,7 +13,7 @@ if __name__ == "__main__":
      
      # Seeker
      seeker = Anomaly_Seeker(disable_tqdm=False)
-     seeker.train_model()
+     seeker.train_model('RFC')
      #seeker.detection_interface()
      
      

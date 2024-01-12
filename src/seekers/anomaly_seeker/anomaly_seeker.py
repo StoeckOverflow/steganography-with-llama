@@ -9,6 +9,8 @@ import glob
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import NearestNeighbors
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -19,7 +21,7 @@ import json
 import os
 
 class Anomaly_Seeker(Seeker):
-    
+
     def __init__(self, disable_tqdm=False) -> None:
         super().__init__(disable_tqdm)
         perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
@@ -255,8 +257,8 @@ class Anomaly_Seeker(Seeker):
         print(clf.cv_results_)
         print(clf.score(X_test, y_test))
     
-    def train_model(self, permutation_importance_flag=True, plotting_flag=True):
-        print('Read features csv...')
+    def train_model(self, modelName='RFC', permutation_importance_flag=True, plotting_flag=True):
+        print('Preparation...')
         try:
             feature_set = pd.read_csv('resources/feature_set_articles.csv')
         except FileNotFoundError:
@@ -264,16 +266,45 @@ class Anomaly_Seeker(Seeker):
         
         labels = feature_set.label
         feature_set = feature_set.drop(columns=['label'])
-        
-        print('Training model...')
         X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
-        clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
-        clf = clf.fit(X_train, y_train)
-        y_pred = clf.predict(X_test)
         
+        if modelName == 'RFC':
+            print('Training Random Forest Classifier')
+            clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
+            clf = clf.fit(X_train, y_train)
+            y_pred = clf.predict(X_test)
+            
+        elif modelName == 'SVM':
+            clf_svm = SVC(random_state=420)
+            clf_svm.fit(X_train, y_train)
+            y_pred = clf_svm.predict(X_test)
+            
+        elif (modelName == 'CoM'):
+            print("Training Center of Mass model")
+            threshold_factor=0.5 #Param do be adjusted
+            centroid = np.mean(X_test, axis=0)
+            distances = np.sqrt(np.sum((X_test - centroid)**2, axis=1))
+            threshold = threshold_factor * np.std(distances)
+            y_pred = distances > threshold
+            
+        elif modelName == 'CoN':
+            print("Training Center of Neighborhood model")
+            k = 5
+            threshold_factor = 1.5
+            neighbors = NearestNeighbors(n_neighbors=k + 1)  # +1 because a point is its own nearest neighbor
+            neighbors.fit(X_test)
+            distances, indices = neighbors.kneighbors(X_test)
+
+            neighborhood_centroids = np.mean(X_test.iloc[indices][:, 1:, :], axis=1)  # Exclude the point itself
+            point_to_neighborhood_distances = np.linalg.norm(X_test - neighborhood_centroids, axis=1)
+            threshold = threshold_factor * np.std(point_to_neighborhood_distances)
+            y_pred = point_to_neighborhood_distances > threshold
+        
+        print('\n')
         print(f"Precision: {precision_score(y_test, y_pred)}")
         print(f"F1 Score: {f1_score(y_test, y_pred)}")
         print(f"Recall: {recall_score(y_test, y_pred)}")
+        print('\n')
         
         if permutation_importance_flag:
             print('Calculate Permutation Importance')
@@ -290,6 +321,7 @@ class Anomaly_Seeker(Seeker):
             plt.savefig(f"permutation_importance_RandomForest.png")
         
         if plotting_flag:
+            print('Plot Prediction')
             x_test_dataframe = pd.DataFrame(X_test)
             x_test_dataframe['prediction'] = y_pred
             x_test_dataframe = x_test_dataframe.reset_index(drop=True)
