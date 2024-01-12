@@ -4,13 +4,14 @@ import string
 import json
 import os
 import glob
+import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from llama_cpp import Llama
-from ...utils.llama_utils import get_perplexity, get_probabilities
+from .features import *
+from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
 from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
-import tqdm
 
 def evaluate_perplexity_threshold():
     llm = Llama(
@@ -21,7 +22,7 @@ def evaluate_perplexity_threshold():
             n_batch=512,          # Number of tokens to process in one batch
             n_threads=3,          # Number of threads llama operations can be processed
             n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
-            use_mlock=True,        # Use mlock to prevent paging the model to disk (depends on your system's memory)
+            use_mlock=True,       # Use mlock to prevent paging the model to disk (depends on your system's memory)
         )
     feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
     feeds = glob.glob(feeds_path_glob)
@@ -72,6 +73,77 @@ def plot_and_save_perplexity_statistics(perplexity_scores):
 
     df = pd.DataFrame(data)
     df.to_csv('resources/perplexity_statistics.csv', index=False)
+
+def evaluate_baseline_feature_statistics():
+    llm = Llama(
+            model_path='llama-2-7b.Q5_K_M.gguf',
+            verbose=False,        
+            logits_all=True,      
+            n_ctx=512,            # Maximum context size (number of tokens) the model can handle
+            n_batch=512,          # Number of tokens to process in one batch
+            n_threads=3,          # Number of threads llama operations can be processed
+            n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
+            use_mlock=True,       # Use mlock to prevent paging the model to disk (depends on your system's memory)
+        )
+    feeds_path_glob = 'resources/feeds/clean_feeds/*.json'
+    feeds = glob.glob(feeds_path_glob)
+    baseline_features = []
+    i = 0
+    for path in feeds:
+        print(f"Current File: {path.split('/')[-1]}\nNumber: {i}")
+        with open(path, 'r') as file:
+            parsed_feed = json.load(file)
+        feed_array = parsed_feed['feed']
+        for feed in feed_array:
+            tokens = llm.tokenizer().encode(feed)
+            length = len(feed)
+            sentences = feed.split('.')
+            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
+            type_token_ratio = len(set(tokens)) / len(tokens) if len(tokens) > 0 else 0
+            flesch_score = flesch_reading_ease(feed)
+            vocab_richness = len(set(tokens)) / length if length > 0 else 0
+            num_special_chars = special_chars_count(feed)
+            sentiment = sentiment_consistency(feed)
+            named_entities = named_entity_analysis(feed)
+            repetition = repetition_patterns(feed)
+            
+            # Llama Features
+            probs = get_probabilities(llm, tokens, feed)
+            avg_token_probability = np.mean(probs)
+            entropy = get_entropy(probs)
+            perplexity = get_perplexity(probs, tokens)
+
+            article_features = [length, 
+                                avg_sentence_length, 
+                                type_token_ratio, 
+                                flesch_score, 
+                                vocab_richness, 
+                                num_special_chars, 
+                                entropy, 
+                                sentiment, 
+                                named_entities, 
+                                repetition, 
+                                avg_token_probability,
+                                perplexity
+                                ]
+            
+            baseline_features.append(article_features)
+
+    baseline_features = pd.DataFrame(baseline_features, columns=[
+                                                'length', 
+                                                'avg_sentence_length', 
+                                                'type_token_ratio', 
+                                                'flesch_score', 
+                                                'vocab_richness', 
+                                                'num_special_chars', 
+                                                'entropy', 
+                                                'sentiment', 
+                                                'named_entities', 
+                                                'repetition', 
+                                                'avg_token_probability',
+                                                'perplexity_scaled'])
+    
+    baseline_features.to_csv('resources/baseline_features.csv')
 
 def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
     '''
@@ -176,7 +248,7 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
                 json.dump(result_newsfeed, file, indent=4)
 
             i += 1
-        
+   
 def create_random_secret(seed):
     random.seed(seed)
     return ''.join(random.choice(string.ascii_letters) for i in range(220))
