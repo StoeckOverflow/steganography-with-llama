@@ -278,6 +278,7 @@ class Anomaly_Seeker(Seeker):
         clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
         clf = clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
+        
         print(f"Precision: {precision_score(y_test, y_pred)}")
         print(f"F1 Score: {f1_score(y_test, y_pred)}")
         print(f"Recall: {recall_score(y_test, y_pred)}")
@@ -322,19 +323,16 @@ class Anomaly_Seeker(Seeker):
        
     def plot_predictions(self, df, modelname='RandomForest'):
         predictions = df.prediction
-        print(predictions)
         features = df.drop(columns=['prediction'])
         
         principle_components = self.apply_PCA(df)
         df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
         df_pca['prediction'] = predictions
-        print(df_pca)
         df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
         
         plt.savefig(f"predictions_{modelname}.png")
         
         outliers = df_pca[df_pca['prediction'] == -1]
-        print(df_pca)
         outlier_data = outliers[['x', 'y']]
         print(f"Number of Outliers: {len(outlier_data)}")
 
