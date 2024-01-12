@@ -12,13 +12,6 @@ from transformers import BertTokenizer, BertForMaskedLM
 from transformers.tokenization_utils import PreTrainedTokenizer
 from ..utils import decode_secret
 
-'''
-TODO:
-- Integrate the Hash Function of the other group as Option
-- Download the Transformer model
-- Adjust Download Script
-'''
-
 class SynonymHashCodec(Codec):
     '''
     Source: https://github.com/ku-nlp
@@ -59,7 +52,7 @@ class SynonymHashCodec(Codec):
     
     def encode_newsfeed(self, news_feed: list[str], binary_secret: str, labeled_for_training_flag=False, **kwargs) -> str:
         doctored_newsfeed = []
-        for feed in tqdm(news_feed,desc='Encode Newsfeed', disable=self.disable_tqdm):
+        for feed in news_feed:
             stego_text, binary_secret_string = self.encode_single_string(feed, binary_secret)
             doctored_newsfeed.append(stego_text)
             binary_secret = binary_secret[len(binary_secret_string):]
@@ -107,7 +100,7 @@ class SynonymHashCodec(Codec):
     def _preprocess_text(self, sentence: str, mask_interval: int) -> dict:
         encoded_ids = self._tokenizer([sentence], return_tensors='pt').input_ids[0]
         masked_ids = self._mask(encoded_ids.clone(), mask_interval)
-        sorted_score, indices = self._predict(masked_ids)
+        sorted_score, indices = self._predict(masked_ids)        
         return { 'input_ids': encoded_ids, 'masked_ids': masked_ids, 'sorted_output': (sorted_score, indices) }
 
     def _mask(self, input_ids: Union[Tensor, List[List[int]]], mask_interval: int) -> Tensor:
