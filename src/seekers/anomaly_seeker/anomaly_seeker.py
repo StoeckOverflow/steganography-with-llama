@@ -25,8 +25,9 @@ class Anomaly_Seeker(Seeker):
         perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
         self.mean_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Mean Perplexity']['Value'].iloc[0]
         self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
+        self.baseline_feature_set = pd.read_csv('resources/baseline_feature_set.csv')
 
-    def extract_features_in_articles(self,articles):
+    def extract_features_in_articles(self, articles):
         features = []
         for article in tqdm(articles, desc='Extracting features', disable=self.disable_tqdm):
             article = str(article)
@@ -40,7 +41,7 @@ class Anomaly_Seeker(Seeker):
             flesch_score = flesch_reading_ease(article)
             vocab_richness = len(set(tokens)) / length if length > 0 else 0
             num_special_chars = special_chars_count(article)
-            entropy = shannon_entropy(article)
+            #entropy = shannon_entropy(article)
             sentiment = sentiment_consistency(article)
             named_entities = named_entity_analysis(article)
             repetition = repetition_patterns(article)
@@ -142,18 +143,15 @@ class Anomaly_Seeker(Seeker):
         
         return feature_set
     
-    '''
-    ToDo:
-     - Refine method with new feature set
-    '''
-    def extract_features_in_newsfeeds(self, newsfeeds):
+    def extract_features_in_newsfeed(self, newsfeed):
 
-        features = []
-        for article in tqdm(newsfeeds, desc='Extracting features', disable=self.disable_tqdm):
+        article_features = []
+        for article in tqdm(newsfeed, desc='Extracting features', disable=self.disable_tqdm):
             article = str(article)
             
             # Standard Text Features
             tokens = self.base_model.tokenizer().encode(article)
+            
             length = len(article)
             sentences = article.split('.')
             avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
@@ -161,7 +159,6 @@ class Anomaly_Seeker(Seeker):
             flesch_score = flesch_reading_ease(article)
             vocab_richness = len(set(tokens)) / length if length > 0 else 0
             num_special_chars = special_chars_count(article)
-            entropy = shannon_entropy(article)
             sentiment = sentiment_consistency(article)
             named_entities = named_entity_analysis(article)
             repetition = repetition_patterns(article)
@@ -182,7 +179,6 @@ class Anomaly_Seeker(Seeker):
             # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
             # Lower values indicate a more predictable and effective model
             perplexity = get_perplexity(probs, tokens)
-            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
 
             article_features = [length, 
                                 avg_sentence_length, 
@@ -195,52 +191,48 @@ class Anomaly_Seeker(Seeker):
                                 named_entities, 
                                 repetition, 
                                 avg_token_probability,
-                                perplexity_scaled
+                                perplexity
                                 ]
             
-            features.append(article_features)
+            article_features.append(article_features)
         
-        scaler = StandardScaler()
-        transformed_features = scaler.fit_transform(features)
-        df = pd.DataFrame(transformed_features, columns=[
-                                                        'length', 
-                                                        'avg_sentence_length', 
-                                                        'type_token_ratio', 
-                                                        'flesch_score', 
-                                                        'vocab_richness', 
-                                                        'num_special_chars', 
-                                                        'entropy', 
-                                                        'sentiment', 
-                                                        'named_entities', 
-                                                        'repetition', 
-                                                        'avg_token_probability',
-                                                        'perplexity_scaled'
-                                                        ])
-        return df
+        feature_set = pd.DataFrame(article_features, columns=[
+                                                            'length', 
+                                                            'avg_sentence_length', 
+                                                            'type_token_ratio', 
+                                                            'flesch_score', 
+                                                            'vocab_richness', 
+                                                            'num_special_chars', 
+                                                            'entropy', 
+                                                            'sentiment', 
+                                                            'named_entities', 
+                                                            'repetition', 
+                                                            'avg_token_probability',
+                                                            'perplexity_scaled'])
+        
+        result_frame = pd.DataFrame()
+        
+        for col in tqdm(feature_set.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
+            result_frame[f"{col}_ks_statistic"] = perplexity_ks_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame[f"{col}_ad_statistic"] = perplexity_ad_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame[f"{col}_t_statistic"] = perplexity_t_test(feature_set[col])
+            
+        return result_frame
 
     def extract_features_and_labels_in_newsfeeds(self, newsfeeds_directory_path, save_flag=True):
-        print('Start Feature Extraction...')
-        feature_set = pd.DataFrame(columns=['length', 
-                                            'avg_sentence_length', 
-                                            'type_token_ratio', 
-                                            'flesch_score', 
-                                            'vocab_richness', 
-                                            'num_special_chars', 
-                                            'entropy', 
-                                            'sentiment', 
-                                            'named_entities', 
-                                            'repetition', 
-                                            'avg_token_probability'])
+        print('Start Feature Extraction...')        
         
         newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
         feed_paths = glob.glob(newsfeeds_files_pattern)
+        feature_set = pd.DataFrame()
         for feed_path in feed_paths:
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
-            new_features = self.extract_features(feed_array)
-            new_features['label'] = feed_path.split(';')[1]
-            feature_set = pd.concat([feature_set, new_features], ignore_index=True)
+            new_features_frame = self.extract_features(feed_array)
+            new_features_frame['label'] = feed_path.split(';')[1]
+            
+            feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
         
         if save_flag:
             print('Save feature_set to csv...')
@@ -264,7 +256,7 @@ class Anomaly_Seeker(Seeker):
         print(clf.score(X_test, y_test))
     
     def train_model(self, permutation_importance_flag=True, plotting_flag=True):
-        
+        print('Read features csv...')
         try:
             feature_set = pd.read_csv('resources/feature_set_articles.csv')
         except FileNotFoundError:
