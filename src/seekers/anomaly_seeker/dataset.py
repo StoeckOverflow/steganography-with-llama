@@ -181,12 +181,12 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
             feed_secret = parsed_feed['secret']
-            
+        
             result_newsfeed = {'feed': [], 'labels': [], 'secret':[]}
             
             if synonym_count < num_arithmetic:
                 synonym_hider = SynonymHider(disable_tqdm=True)
-                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret*20, output='labeled_For_Training')
+                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret*2, output='labeled_For_Training')
                 labels = [-1] * (30 - rest_length) + [1] * rest_length
                 result_newsfeed['feed'] = doctored_newsfeeds
                 result_newsfeed['labels'] = labels
@@ -194,9 +194,10 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
                 synonym_count += 1
             elif arithmetic_count < num_synonym:
                 try:
-                    dynamic_poe = DynamicPOE(disable_tqdm=True)
-                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret*20, feed_array, labeled_for_training_flag=True)
+                    dynamic_poe = DynamicPOE(disable_tqdm=False)
+                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret*5, feed_array, labeled_for_training_flag=True)
                 except IndexError:
+                    print('Index Error')
                     labels = [1] * 30
                     result_newsfeed['feed'] = feed_array
                     result_newsfeed['labels'] = labels
@@ -221,7 +222,6 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
     elif newsfeed_or_article_labeling == 'newsfeed':
         for path in tqdm.tqdm(feeds, desc="Process feeds"):
             print(f"Current File: {path}\nNumber: {i}")
-            
             
             with open(path, 'r') as file:
                 parsed_feed = json.load(file)
