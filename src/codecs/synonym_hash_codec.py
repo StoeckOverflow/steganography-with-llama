@@ -14,6 +14,7 @@ from ..utils import decode_secret
 
 class SynonymHashCodec(Codec):
     '''
+    ToDo: Start and End Token integration
     Source: https://github.com/ku-nlp
     '''
 
@@ -39,16 +40,16 @@ class SynonymHashCodec(Codec):
             ids = indices[i_token]
             scores = sorted_score[i_token]
             candidates = self._pick_candidates_threshold(ids, scores, score_threshold)
-            print(self._tokenizer.convert_ids_to_tokens(candidates))
+            #print(self._tokenizer.convert_ids_to_tokens(candidates))
             if len(candidates) < 2:
                 continue
             replace_token_id = self._block_encode_single(candidates, message_io).item()
-            print('replace', replace_token_id, self._tokenizer.convert_ids_to_tokens([replace_token_id]))
+            #print('replace', replace_token_id, self._tokenizer.convert_ids_to_tokens([replace_token_id]))
             input_ids[i_token] = replace_token_id
         encoded_message: str = message_io.getvalue()[:message_io.tell()]
         message_io.close()
         stego_text = self._tokenizer.decode(input_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-        return stego_text, binary_secret
+        return stego_text, encoded_message
     
     def encode_newsfeed(self, news_feed: list[str], binary_secret: str, labeled_for_training_flag=False, **kwargs) -> str:
         doctored_newsfeed = []
@@ -63,7 +64,7 @@ class SynonymHashCodec(Codec):
         else:
             return doctored_newsfeed + news_feed[len(doctored_newsfeed):]
     
-    def decode_single_string(self, newsfeed:str, mask_interval: int = 3, score_threshold: float = 0.005) -> str:
+    def decode_single_string(self, newsfeed:str, mask_interval: int = 3, score_threshold: float = 0.01) -> str:
         decoded_message: List[str] = []
         processed = self._preprocess_text(newsfeed, mask_interval)
         input_ids = processed['input_ids']
@@ -78,16 +79,15 @@ class SynonymHashCodec(Codec):
             if len(candidates) < 2:
                 continue
             chosen_id: int = input_ids[i_token].item()
+            print(self._block_decode_single(candidates, chosen_id))
             decoded_message.append(self._block_decode_single(candidates, chosen_id))
         return ''.join(decoded_message)
     
     def decode_newsfeed(self, newsfeed: list[str], **kwargs):
         remaining_decoded_secret = []
-
-        for feed in tqdm(newsfeed,desc='Decode Newsfeed', disable=self.disable_tqdm):
+        for feed in newsfeed:
             decoded_message = self.decode_single_string(feed)
             remaining_decoded_secret.append(decoded_message)
-        
         return decode_secret(''.join(remaining_decoded_secret))    
 
     def _predict(self, input_ids: Union[Tensor, List[List[int]]]):
