@@ -89,7 +89,7 @@ def evaluate_baseline_feature_statistics():
     feeds = glob.glob(feeds_path_glob)
     baseline_features = []
     i = 0
-    for path in feeds:
+    for path in feeds[:5]: # First five feeds
         print(f"Current File: {path.split('/')[-1]}\nNumber: {i}")
         with open(path, 'r') as file:
             parsed_feed = json.load(file)
@@ -169,7 +169,7 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
     num_arithmetic = int(num_feeds * 0.3)
     num_synonym = int(num_feeds * 0.3)
     
-    doctored_articles_path = 'resources/feeds/doctored_feeds'
+    doctored_articles_path = 'resources/feeds/doctored_feeds_articles'
     if not os.path.exists(doctored_articles_path):
         os.makedirs(doctored_articles_path)
     
@@ -182,19 +182,20 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
             feed_array = parsed_feed['feed']
             feed_secret = parsed_feed['secret']
             
-            result_newsfeed = {'feed': [], 'labels': []}
+            result_newsfeed = {'feed': [], 'labels': [], 'secret':[]}
             
             if synonym_count < num_arithmetic:
                 synonym_hider = SynonymHider(disable_tqdm=True)
-                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret, output='labeled_For_Training')
+                doctored_newsfeeds, rest_length = synonym_hider.hide_secret(feed_array, feed_secret*20, output='labeled_For_Training')
                 labels = [-1] * (30 - rest_length) + [1] * rest_length
                 result_newsfeed['feed'] = doctored_newsfeeds
                 result_newsfeed['labels'] = labels
+                result_newsfeed['secret'] = feed_secret
                 synonym_count += 1
             elif arithmetic_count < num_synonym:
                 try:
                     dynamic_poe = DynamicPOE(disable_tqdm=True)
-                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
+                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret*20, feed_array, labeled_for_training_flag=True)
                 except IndexError:
                     labels = [1] * 30
                     result_newsfeed['feed'] = feed_array
@@ -203,6 +204,7 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
                 labels = [-1] * (30 - rest_length) + [1] * rest_length
                 result_newsfeed['feed'] = doctored_newsfeeds['feed']
                 result_newsfeed['labels'] = labels
+                result_newsfeed['secret'] = feed_secret
                 arithmetic_count += 1
             else: #newsfeed is not processed
                 labels = [1] * 30
