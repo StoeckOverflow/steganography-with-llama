@@ -57,23 +57,14 @@ def count_transition_words(article):
 
 def perplexity_ks_test(baseline_perplexities, article_perplexity_scores):
     _, p_value = stats.ks_2samp(baseline_perplexities, article_perplexity_scores)
-    if p_value < 0.05:
-        return -1
-    else:
-        return 1
+    return -1 if p_value < 0.05 else 1
     
 def perplexity_ad_test(baseline_perplexities, article_perplexity_scores):
     _, p_value = stats.ttest_ind(baseline_perplexities, article_perplexity_scores, equal_var=True)
-    if p_value < 0.05:
-        return -1
-    else:
-        return 1
+    return -1 if p_value < 0.05 else 1
 
 def perplexity_t_test(article_perplexity_scores):
     result = stats.anderson(article_perplexity_scores, dist='norm')
     for i in range(len(result.critical_values)):
         sl, cv = result.significance_level[i], result.critical_values[i]
-        if result.statistic > cv:
-            return -1
-        else:
-            return 1
+        return -1 if result.statistic > cv else 1
