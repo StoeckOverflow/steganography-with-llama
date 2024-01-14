@@ -94,7 +94,7 @@ def evaluate_baseline_feature_statistics():
         with open(path, 'r') as file:
             parsed_feed = json.load(file)
         feed_array = parsed_feed['feed']
-        for feed in feed_array:
+        for feed in tqdm.tqdm(feed_array, desc='Process Feed Features'):
             tokens = llm.tokenizer().encode(feed)
             length = len(feed)
             sentences = feed.split('.')
@@ -195,7 +195,7 @@ def create_newsfeed_dataset(newsfeed_or_article_labeling='article'):
             elif arithmetic_count < num_synonym:
                 try:
                     dynamic_poe = DynamicPOE(disable_tqdm=False)
-                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret*5, feed_array, labeled_for_training_flag=True)
+                    doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret*15, feed_array, labeled_for_training_flag=True)
                 except IndexError:
                     print('Index Error')
                     labels = [1] * 30
