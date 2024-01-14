@@ -27,11 +27,11 @@ class Anomaly_Seeker(Seeker):
         perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
         self.mean_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Mean Perplexity']['Value'].iloc[0]
         self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
-        self.baseline_feature_set = pd.read_csv('resources/baseline_feature_set.csv')
+        self.baseline_feature_set = pd.read_csv('resources/baseline_features.csv')
 
     def extract_features_in_articles(self, articles):
         features = []
-        for article in tqdm(articles, desc='Extracting features', disable=self.disable_tqdm):
+        for article in articles:
             article = str(article)
             
             # Standard Text Features
@@ -110,30 +110,21 @@ class Anomaly_Seeker(Seeker):
 
     def extract_features_and_labels_in_articles(self, newsfeeds_directory_path, save_flag=True):
         print('Start Feature Extraction...')
-        feature_set = pd.DataFrame(columns=['length', 
-                                            'avg_sentence_length', 
-                                            'type_token_ratio', 
-                                            'flesch_score', 
-                                            'vocab_richness', 
-                                            'num_special_chars', 
-                                            'entropy', 
-                                            'sentiment', 
-                                            'named_entities', 
-                                            'repetition', 
-                                            'avg_token_probability',
-                                            'perplexity_scaled'
-                                            ])
         newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
         all_labels = []
         feed_paths = glob.glob(newsfeeds_files_pattern)
-        for feed_path in feed_paths:
+        i = 0
+        for feed_path in tqdm(feed_paths, desc='Extract Features of Newsfeeds', disable=self.disable_tqdm):
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
             feed_labels = parsed_feed['labels']
             new_features = self.extract_features_in_articles(feed_array)
-            print(new_features.head())
-            feature_set = pd.concat([feature_set, new_features], ignore_index=True)
+            if i == 0:
+                feature_set = new_features
+                i += 1
+            else:
+                feature_set = pd.concat([feature_set, new_features], ignore_index=True)
             all_labels.extend(feed_labels)
         
         feature_set['label'] = all_labels
@@ -226,15 +217,18 @@ class Anomaly_Seeker(Seeker):
         
         newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
         feed_paths = glob.glob(newsfeeds_files_pattern)
-        feature_set = pd.DataFrame()
+        i = 0
         for feed_path in feed_paths:
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
             new_features_frame = self.extract_features(feed_array)
             new_features_frame['label'] = feed_path.split(';')[1]
-            
-            feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
+            if i == 0:
+                feature_set = new_features_frame
+                i += 1
+            else:
+                feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
         
         if save_flag:
             print('Save feature_set to csv...')
@@ -262,7 +256,7 @@ class Anomaly_Seeker(Seeker):
         try:
             feature_set = pd.read_csv('resources/feature_set_articles.csv')
         except FileNotFoundError:
-            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds')
+            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds_articles')
         
         labels = feature_set.label
         feature_set = feature_set.drop(columns=['label'])
