@@ -173,7 +173,7 @@ class Anomaly_Seeker(Seeker):
             # Lower values indicate a more predictable and effective model
             perplexity = get_perplexity(probs, tokens)
 
-            article_features = [length, 
+            article_features_entry = [length, 
                                 avg_sentence_length, 
                                 type_token_ratio, 
                                 flesch_score, 
@@ -187,8 +187,8 @@ class Anomaly_Seeker(Seeker):
                                 perplexity
                                 ]
             
-            article_features.append(article_features)
-        
+            article_features.append(article_features_entry)
+
         feature_set = pd.DataFrame(article_features, columns=[
                                                             'length', 
                                                             'avg_sentence_length', 
@@ -203,33 +203,39 @@ class Anomaly_Seeker(Seeker):
                                                             'avg_token_probability',
                                                             'perplexity_scaled'])
         
-        result_frame = pd.DataFrame()
+        result_frame = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
         
         for col in tqdm(feature_set.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
-            result_frame[f"{col}_ks_statistic"] = perplexity_ks_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame[f"{col}_ad_statistic"] = perplexity_ad_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame[f"{col}_t_statistic"] = perplexity_t_test(feature_set[col])
-            
+            result_frame.at[0, f"{col}_ks_statistic"] = perplexity_ks_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame.at[0, f"{col}_ad_statistic"] = perplexity_ad_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame.at[0, f"{col}_t_statistic"] = perplexity_t_test(feature_set[col])
+        
         return result_frame
 
     def extract_features_and_labels_in_newsfeeds(self, newsfeeds_directory_path, save_flag=True):
         print('Start Feature Extraction...')        
         
-        newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
-        feed_paths = glob.glob(newsfeeds_files_pattern)
+        benign = os.path.join(newsfeeds_directory_path, '*;1')
+        malicious = os.path.join(newsfeeds_directory_path, '*;-1')
+
+        feed_paths_benign = glob.glob(benign)
+        feed_paths_malicious = glob.glob(malicious)
+        
+        feed_paths = feed_paths_benign + feed_paths_malicious
+        
         i = 0
+        feature_set = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
         for feed_path in feed_paths:
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
-            new_features_frame = self.extract_features(feed_array)
+            new_features_frame = self.extract_features_in_newsfeed(feed_array)
             new_features_frame['label'] = feed_path.split(';')[1]
             if i == 0:
                 feature_set = new_features_frame
                 i += 1
             else:
                 feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
-        
         if save_flag:
             print('Save feature_set to csv...')
             feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
@@ -254,9 +260,9 @@ class Anomaly_Seeker(Seeker):
     def train_model(self, modelName='RFC', permutation_importance_flag=True, plotting_flag=True):
         print('Preparation...')
         try:
-            feature_set = pd.read_csv('resources/feature_set_articles.csv')
+            feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
         except FileNotFoundError:
-            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds_articles')
+            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
         
         labels = feature_set.label
         feature_set = feature_set.drop(columns=['label'])
@@ -312,7 +318,7 @@ class Anomaly_Seeker(Seeker):
             plt.xlabel('Mean decrease in accuracy')
             plt.ylabel('Feature')
             plt.title('Feature importance')
-            plt.savefig(f"permutation_importance_{modelName}.png")
+            plt.savefig(f"permutation_importance_{modelName}_newsfeeds.png")
         
         if plotting_flag:
             print('Plot Prediction')
@@ -321,7 +327,7 @@ class Anomaly_Seeker(Seeker):
             x_test_dataframe = x_test_dataframe.reset_index(drop=True)
             self.plot_predictions(x_test_dataframe, modelName)
         
-        joblib.dump(clf, 'resources/models/anomaly_detector.joblib')
+        joblib.dump(clf, 'resources/models/anomaly_detector_newsfeeds.joblib')
     
     def detect_secret(self, newsfeed: list[str]) -> bool:
         #print('Predicting news feed...')
@@ -348,13 +354,13 @@ class Anomaly_Seeker(Seeker):
         df_pca['prediction'] = predictions
         df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
         
-        plt.savefig(f"predictions_{modelname}.png")
+        plt.savefig(f"predictions_{modelname}_newsfeeds.png")
         
         outliers = df_pca[df_pca['prediction'] == -1]
         outlier_data = outliers[['x', 'y']]
         print(f"Number of Outliers: {len(outlier_data)}")
 
-        outlier_data.to_csv(f"outliers_{modelname}.csv", index=False)
+        outlier_data.to_csv(f"outliers_{modelname}_newsfeeds.csv", index=False)
         
     def apply_PCA(self, df, n_components=2):
             pca = PCA(n_components=n_components)
