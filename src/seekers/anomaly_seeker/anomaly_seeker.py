@@ -220,12 +220,15 @@ class Anomaly_Seeker(Seeker):
 
         feed_paths_benign = glob.glob(benign)
         feed_paths_malicious = glob.glob(malicious)
-        
         feed_paths = feed_paths_benign + feed_paths_malicious
+        feed_paths = sorted(feed_paths)
         
-        i = 0
-        feature_set = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
+        i = 9
+        #feature_set = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
+        feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
+        print(feature_set)
         for feed_path in feed_paths:
+            print(f"Feed Path: {feed_path}\nIteration: {i}")
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
@@ -236,6 +239,10 @@ class Anomaly_Seeker(Seeker):
                 i += 1
             else:
                 feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
+                feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
+                i += 1
+                print(f"Feed with feed_path {feed_path} saved\nNext Iteration: {i}")
+        
         if save_flag:
             print('Save feature_set to csv...')
             feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
@@ -260,7 +267,8 @@ class Anomaly_Seeker(Seeker):
     def train_model(self, modelName='RFC', permutation_importance_flag=True, plotting_flag=True):
         print('Preparation...')
         try:
-            feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
+            #feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
+            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
         except FileNotFoundError:
             feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
         
@@ -330,12 +338,12 @@ class Anomaly_Seeker(Seeker):
         joblib.dump(clf, 'resources/models/anomaly_detector_newsfeeds.joblib')
     
     def detect_secret(self, newsfeed: list[str]) -> bool:
-        #print('Predicting news feed...')
-        
+        return self.detect_secret_in_article(newsfeed)
+    
+    def detect_secret_in_article(self, newsfeed: list[str]) -> bool:
         articles = [clean(article) for article in newsfeed]
-
-        features = self.extract_features(articles)
-        clf = joblib.load('resources/models/anomaly_detector.joblib')
+        features = self.extract_features_in_articles(articles)
+        clf = joblib.load('resources/models/anomaly_detector_articles.joblib')
         predictions = clf.predict(features)
         counts = Counter(predictions)
         #print('Predictions:', predictions)
@@ -344,7 +352,16 @@ class Anomaly_Seeker(Seeker):
             return True #-1
         else:
             return False #1
-       
+    
+    def detect_secret_in_newsfeed(self, newsfeed: list[str]) -> bool:
+        articles = [clean(article) for article in newsfeed]
+        features = self.extract_features_in_newsfeed(articles)
+        clf = joblib.load('resources/models/anomaly_detector_newsfeeds.joblib')
+        prediction = clf.predict(features)
+        #print('Prediction:', prediction)
+
+        return True if prediction == -1 else False
+
     def plot_predictions(self, df, modelname='RFC'):
         predictions = df.prediction
         features = df.drop(columns=['prediction'])
