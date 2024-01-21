@@ -1,3 +1,6 @@
+import string
+import numpy as np
+
 def clean(text):
     text = text.replace("\n", " ")
     text = text.replace("\t", " ")
@@ -25,3 +28,20 @@ def count_syllables(word):
     if num_syllables == 0:
         num_syllables = 1
     return num_syllables
+
+def get_length(text):
+       return len(text)
+
+def get_entropy(text):
+    entropy = 0
+    for c in text:
+        p = text.count(c) / len(text)
+        if p > 0:
+            entropy += -p * np.log2(p)
+    return entropy
+
+def get_alpha(text):
+    return sum(c.isalpha() for c in text)
+
+def get_punct(text):
+    return sum(c in string.punctuation for c in text)

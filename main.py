@@ -1,11 +1,32 @@
+#import json
+#import sys
+#from src.hiders.synonym_hider import SynonymHider
 #from src.models import DynamicPOE
-#from src.seekers.detectGPTseeker import detectGPTseeker
 from src.seekers.anomaly_seeker.anomaly_seeker import Anomaly_Seeker
+from src.seekers.anomaly_seeker.dataset import create_newsfeed_dataset, evaluate_perplexity_threshold, plot_and_save_perplexity_statistics
 
 if __name__ == "__main__":
-    #dpoe = DynamicPOE(disable_tqdm=True)
-    #dpoe.recover_interface()
-    #seeker = detectGPTseeker(disable_tqdm=False)
-    #seeker.detection_interface()
-    seeker = Anomaly_Seeker(disable_tqdm=True)
-    seeker.detection_interface()
+     # Dataset creation
+     #create_newsfeed_dataset()
+     #perplexities = evaluate_perplexity_threshold()
+     #plot_and_save_perplexity_statistics(perplexities)
+     
+     # Seeker
+     seeker = Anomaly_Seeker(disable_tqdm=False)
+     seeker.train_model('RFC')
+     #seeker.detection_interface()
+     
+     
+     # Hider
+     '''
+     #data = sys.stdin.read()
+     #json_data = json.loads(data)
+     #feed_array = json_data['feed']
+     #feed_secret = json_data['secret']
+          
+     #synonym_hider = SynonymHider(disable_tqdm=False)
+     #synonym_hider.hide_secret(feed_array, feed_secret, output='stdout')
+     
+     #dpoe = DynamicPOE(disable_tqdm=True)
+     #dpoe.recover_interface()
+     '''

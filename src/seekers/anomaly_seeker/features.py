@@ -4,6 +4,8 @@ from textblob import TextBlob
 import spacy
 import numpy as np
 from collections import Counter
+from scipy import stats
+import pandas as pd
 
 def flesch_reading_ease(article):
     words = article.split()
@@ -52,3 +54,39 @@ def count_transition_words(article):
     transition_words = ['however', 'furthermore', 'therefore', 'consequently', 'meanwhile', 'nonetheless', 'moreover', 'likewise', 'instead', 'nevertheless', 'otherwise', 'similarly', 'accordingly', 'subsequently', 'hence', 'thus', 'still', 'then', 'yet', 'accordingly', 'additionally', 'alternatively', 'besides', 'comparatively', 'conversely', 'finally', 'further', 'furthermore', 'hence', 'however', 'indeed', 'instead', 'likewise', 'meanwhile', 'moreover', 'nevertheless', 'next', 'nonetheless', 'otherwise', 'similarly', 'still', 'subsequently', 'then', 'therefore', 'thus', 'whereas', 'while', 'yet'] 
     count = sum(article.count(word) for word in transition_words)
     return count
+
+def ks_test(baseline_scores, article_scores):
+    _, p_value = stats.ks_2samp(baseline_scores, article_scores)
+    #return p_value
+    return -1 if p_value < 0.05 else 1
+
+def ad_test_normal_dist(article_scores):
+    result = stats.anderson(article_scores, dist='norm')
+    for i in range(len(result.critical_values)):
+        sl, cv = result.significance_level[i], result.critical_values[i]
+        return -1 if result.statistic > cv else 1
+    
+def ad_test_two_sample(baseline_scores, article_scores):
+
+    combined_sample = np.concatenate([baseline_scores, article_scores])
+
+    # empirical cumulative distribution functions (ECDF)
+    ecdf1 = stats.ecdf(baseline_scores)
+    ecdf2 = stats.ecdf(article_scores)
+
+    # Compute the Anderson-Darling statistic
+    n1 = len(baseline_scores)
+    n2 = len(article_scores)
+    n = n1 * n2 / (n1 + n2)
+    
+    ad_statistic = n * np.sum((ecdf1(combined_sample) - ecdf2(combined_sample))**2)
+
+    # Compare the statistic to critical values or return it
+    # Note: Critical values for the two-sample test are not standard and would normally require simulation or a lookup table
+    #return ad_statistic
+    return -1 if ad_statistic > 0.5 else 1
+
+def t_test(baseline_scores, article_scores):
+    _, p_value = stats.ttest_ind(baseline_scores, article_scores, equal_var=True)
+    #return p_value
+    return -1 if p_value < 0.05 else 1

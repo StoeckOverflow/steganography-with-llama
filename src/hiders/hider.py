@@ -7,8 +7,8 @@ from ..codecs.codec import Codec
 
 class Hider(ABC):
     
-    def __init__(self, codec: Codec, llm:Llama):
-        self.codec = codec(llm)
+    def __init__(self, codec: Codec, llm:Llama, disable_tqdm):
+        self.codec = codec(llm, disable_tqdm)
     
     def hide_secret(self, newsfeed: list[str], secret:str, output:str = "doctored_feed"):
         """
@@ -24,18 +24,22 @@ class Hider(ABC):
             encoded_newsfeed: The newsfeed text with the secret hidden.
         """
         binary_secret = encode_secret(secret)[2:]
-        doctored_newsfeed = self.codec.encode_newsfeed(newsfeed, binary_secret)
-        doctored_feed = {"feed": doctored_newsfeed}
-        if(output == "string"):
-            return doctored_newsfeed
-        elif(output == "json"):
-            return doctored_feed
-        elif(output == "stdout"):
-            json.dump(doctored_feed, sys.stdout)
-            sys.stdout.flush()
+        if (output == 'labeled_For_Training'):
+            doctored_newsfeed, length_rest = self.codec.encode_newsfeed(newsfeed, binary_secret, True)
+            return doctored_newsfeed, length_rest
         else:
-            with open(output +".json", "w") as f:
-                json.dump(doctored_feed, f)
+            doctored_newsfeed = self.codec.encode_newsfeed(newsfeed, binary_secret)
+            doctored_feed = {"feed": doctored_newsfeed}
+            if(output == "string"):
+                return doctored_newsfeed
+            elif(output == "json"):
+                return doctored_feed
+            elif(output == "stdout"):
+                json.dump(doctored_feed, sys.stdout)
+                sys.stdout.flush()
+            else:
+                with open(output +".json", "w") as f:
+                    json.dump(doctored_feed, f)
                 
     def reveal_secret(self, newsfeed: list[str], output:str = "decoded_feed"):
         """Decodes the secret out of a given newsfeed
