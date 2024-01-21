@@ -55,16 +55,38 @@ def count_transition_words(article):
     count = sum(article.count(word) for word in transition_words)
     return count
 
-def perplexity_ks_test(baseline_perplexities, article_perplexity_scores):
-    _, p_value = stats.ks_2samp(baseline_perplexities, article_perplexity_scores)
-    return -1 if p_value < 0.05 else 1
-    
-def perplexity_ad_test(baseline_perplexities, article_perplexity_scores):
-    _, p_value = stats.ttest_ind(baseline_perplexities, article_perplexity_scores, equal_var=True)
+def ks_test(baseline_scores, article_scores):
+    _, p_value = stats.ks_2samp(baseline_scores, article_scores)
+    #return p_value
     return -1 if p_value < 0.05 else 1
 
-def perplexity_t_test(article_perplexity_scores):
-    result = stats.anderson(article_perplexity_scores, dist='norm')
+def ad_test_normal_dist(article_scores):
+    result = stats.anderson(article_scores, dist='norm')
     for i in range(len(result.critical_values)):
         sl, cv = result.significance_level[i], result.critical_values[i]
         return -1 if result.statistic > cv else 1
+    
+def ad_test_two_sample(baseline_scores, article_scores):
+
+    combined_sample = np.concatenate([baseline_scores, article_scores])
+
+    # empirical cumulative distribution functions (ECDF)
+    ecdf1 = stats.ecdf(baseline_scores)
+    ecdf2 = stats.ecdf(article_scores)
+
+    # Compute the Anderson-Darling statistic
+    n1 = len(baseline_scores)
+    n2 = len(article_scores)
+    n = n1 * n2 / (n1 + n2)
+    
+    ad_statistic = n * np.sum((ecdf1(combined_sample) - ecdf2(combined_sample))**2)
+
+    # Compare the statistic to critical values or return it
+    # Note: Critical values for the two-sample test are not standard and would normally require simulation or a lookup table
+    #return ad_statistic
+    return -1 if ad_statistic > 0.5 else 1
+
+def t_test(baseline_scores, article_scores):
+    _, p_value = stats.ttest_ind(baseline_scores, article_scores, equal_var=True)
+    #return p_value
+    return -1 if p_value < 0.05 else 1
