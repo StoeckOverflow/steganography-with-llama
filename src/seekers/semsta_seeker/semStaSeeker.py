@@ -8,25 +8,23 @@ from .semanticFeatureExtractor import SemanticFeatureExtractor
 from .statisticalFeatureExtractor import StatisticalFeatureExtractor
 
 class SemStaSeeker(Seeker):
-    def __init__(self, alpha, semantic_dim, statistical_dim, num_classes, output_size):
+    
+    def __init__(self, alpha=0.25, semantic_dim=128, statistical_dim=128, num_classes=2, output_size=128, disable_tqdm=False):
         self.fusion_component = FusionComponent(alpha, semantic_dim, statistical_dim)
-        self.semantic_feature_extractor = SemanticFeatureExtractor(output_size)
-        self.statistical_feature_extractor = StatisticalFeatureExtractor()
+        self.semantic_feature_extractor = SemanticFeatureExtractor(disable_tqdm=disable_tqdm, output_size=output_size)
+        self.statistical_feature_extractor = StatisticalFeatureExtractor(hidden_dim=statistical_dim, disable_tqdm=disable_tqdm)
         self.classifier = Classifier(semantic_dim, num_classes)
     
-    def get_classification(self, semantic_features, statistical_features):
-        fused_features = self.fusion_component(semantic_features, statistical_features)
-        classification_output = self.classifier(fused_features)
-        return classification_output
-
     def detect_secret(self, newsfeed: list[str]) -> bool:
-        
         semantic_features = self.semantic_feature_extractor(newsfeed)
-        statistical_features = self.statistical_feature_extractor(newsfeed)
+        statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
+
         fused_features = self.fusion_component(semantic_features, statistical_features)
         classification_output = self.classifier(fused_features)
-        print(f"Classification Output: {classification_output}")
+        probabilities = torch.exp(classification_output)
+        print(f"Classification Output after exp conversion: {probabilities}")
         
-        #Implement the Decision Logic here
+        not_clean_prob = probabilities[:, 1]
+        decision = not_clean_prob > 0.5
         
-        return True
+        return decision.item()
