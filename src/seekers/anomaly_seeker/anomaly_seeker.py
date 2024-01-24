@@ -29,6 +29,7 @@ class Anomaly_Seeker(Seeker):
         self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
         self.baseline_feature_set = pd.read_csv('resources/baseline_features.csv')
 
+    'Extract Article Features and Labels for all Newsfeeds'
     def extract_features_in_articles(self, articles):
         features = []
         for article in articles:
@@ -135,7 +136,8 @@ class Anomaly_Seeker(Seeker):
             print('feature-set saved')
         
         return feature_set
-    
+
+    'Extract Features and Labels in all Newsfeeds for best Match Values in Statistical Tests'
     def extract_features_in_newsfeed(self, newsfeed):
 
         article_features = []
@@ -143,74 +145,46 @@ class Anomaly_Seeker(Seeker):
             article = str(article)
                 
             # Standard Text Features
-            tokens = self.base_model.tokenizer().encode(article)
-                
-            length = len(article)
             sentences = article.split('.')
-            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
-            type_token_ratio = len(set(tokens)) / len(tokens) if len(tokens) > 0 else 0
-            flesch_score = flesch_reading_ease(article)
-            vocab_richness = len(set(tokens)) / length if length > 0 else 0
             num_special_chars = special_chars_count(article)
-            sentiment = sentiment_consistency(article)
-            named_entities = named_entity_analysis(article)
-            repetition = repetition_patterns(article)
+            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
+            flesch_score = flesch_reading_ease(article)
                 
             # Llama Features
+            tokens = self.base_model.tokenizer().encode(article)
             probs = get_probabilities(self.base_model, tokens, article)
             avg_token_probability = np.mean(probs)
-                
-            # Reflects the diversity or uncertainty of token predictions.
-            # Tokens with low log-probability are less suspicious in high-entropy (uniform) distributions
-            # High Entropy: Indicates uncertainty, many tokens are equally likely
-            # Low Entropy: (Spiky Distribution): Indicates certainty, fewer tokens are likely
-            # 1 Compute the entropy of the token distribution at each position in the text.
-            # 2 Assess the log-probability of the actual token at each position.
-            # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
             entropy = get_entropy(probs)
-                
-            # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
-            # Lower values indicate a more predictable and effective model
             perplexity = get_perplexity(probs, tokens)
+            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
 
-            article_features_entry = [length, 
-                                avg_sentence_length, 
-                                type_token_ratio, 
-                                flesch_score, 
-                                vocab_richness, 
+            article_features_entry = [ 
+                                avg_sentence_length,
+                                flesch_score,
                                 num_special_chars, 
-                                entropy, 
-                                sentiment, 
-                                named_entities, 
-                                repetition, 
+                                entropy,
                                 avg_token_probability,
-                                perplexity
+                                perplexity_scaled
                                 ]
                 
             article_features.append(article_features_entry)
 
         feature_set = pd.DataFrame(article_features, columns=[
-                                                            'length', 
-                                                            'avg_sentence_length', 
-                                                            'type_token_ratio', 
-                                                            'flesch_score', 
-                                                            'vocab_richness', 
+                                                            'avg_sentence_length',
+                                                            'flesch_score',  
                                                             'num_special_chars', 
-                                                            'entropy', 
-                                                            'sentiment', 
-                                                            'named_entities', 
-                                                            'repetition', 
-                                                            'avg_token_probability',
+                                                            'entropy',
                                                             'perplexity_scaled'])
         
-        result_frame = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
+        feature_matrix = pd.DataFrame()
         
-        for col in tqdm(feature_set.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
-            result_frame.at[0, f"{col}_ks_statistic"] = ks_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame.at[0, f"{col}_ad_statistic"] = t_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame.at[0, f"{col}_t_statistic"] = ad_test_normal_dist(feature_set[col])
-        
-        return result_frame
+        feature_matrix.at[0,'num_special_chars_ad_statistic'] = ad_test_normal_dist(feature_set['num_special_chars'])
+        feature_matrix.at[0,'avg_sentence_length_ad_statistic'] = ad_test_normal_dist(feature_set['avg_sentence_length'])
+        feature_matrix.at[0,'flesch_score_ad_statistic'] = ad_test_normal_dist(feature_set['flesch_score_ad_statistic'])
+        feature_matrix.at[0,'entropy_ad_statistic_two_sample'] = ad_test_two_sample(self.baseline_feature_set['entropy'], feature_set['entropy'])
+        feature_matrix.at[0,'perplexity_scaled_ad_statistic_two_sample'] = ad_test_two_sample(self.baseline_feature_set['entropy'], feature_set['perplexity_scaled'])
+
+        return feature_matrix
 
     def extract_features_and_labels_in_newsfeeds(self, newsfeeds_directory_path, save_flag=True):
         print('Start Feature Extraction...')        
@@ -223,10 +197,9 @@ class Anomaly_Seeker(Seeker):
         feed_paths = feed_paths_benign + feed_paths_malicious
         feed_paths = sorted(feed_paths)
         
-        i = 9
-        #feature_set = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
-        feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
-        print(feature_set)
+        i = 0
+        #feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
+        feature_set = pd.DataFrame()
         for feed_path in feed_paths:
             print(f"Feed Path: {feed_path}\nIteration: {i}")
             with open(feed_path, 'r') as file:
@@ -250,20 +223,21 @@ class Anomaly_Seeker(Seeker):
         
         return feature_set
 
-    def extract_features_and_labels_in_newsfeeds_test(self):
+    'Test Method for Statistical Tests'
+    def extract_features_and_labels_in_newsfeeds_statistical_tests(self):
         '''
         Generate synthetic newsfeed dataset for training
         '''
         print('Start Feature Extraction...')
         
-        def extract_features_of_articles_feature_set(self, article_features):
+        def extract_features_of_articles_feature_set(article_features):
         
             result_frame = pd.DataFrame()
             
-            for col in tqdm(article_features.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
+            for col in article_features.columns:
                 result_frame.at[0, f"{col}_ks_statistic"] = ks_test(self.baseline_feature_set[col], article_features[col])
                 result_frame.at[0, f"{col}_t_statistic"] = t_test(self.baseline_feature_set[col], article_features[col])
-                result_frame.at[0, f"{col}_ad_statistic_two_sample"] = t_test(self.baseline_feature_set[col], article_features[col])
+                result_frame.at[0, f"{col}_ad_statistic_two_sample"] = ad_test_two_sample(self.baseline_feature_set[col], article_features[col])
                 result_frame.at[0, f"{col}_ad_statistic"] = ad_test_normal_dist(article_features[col])
 
             return result_frame     
@@ -278,15 +252,28 @@ class Anomaly_Seeker(Seeker):
             end_row = start_row + chunk_size
             chunk = feature_set_articles.iloc[start_row:end_row]
             
-            new_features_frame = extract_features_of_articles_feature_set(chunk.drop(columns=['label']))
+            new_features_frame = extract_features_of_articles_feature_set(article_features=chunk.drop(columns=['label']))
             new_features_frame['label'] = -1 if any(chunk['label'] == -1) else 1
             
             feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
 
-        feature_set.to_csv('resources/feature_set_newsfeeds_new_p_values.csv', index=False)
+        feature_set.to_csv('resources/feature_set_newsfeeds_new.csv', index=False)
         
-        return feature_set
+        percentage_dict = {}
+        
+        for col in feature_set.columns:
+            if col != 'label':
+                equal_count = np.sum(feature_set[col] == feature_set['label'])
+                percentage = (equal_count / len(feature_set)) * 100
+                percentage_dict[col] = percentage
 
+        sorted_percentage_dict = dict(sorted(percentage_dict.items(), key=lambda item: item[1], reverse=True))
+        for col, percentage in sorted_percentage_dict.items():
+            print(f"{col}: {percentage:.2f}%")
+
+        return feature_set
+    
+    'Model Training and Grid Search'
     def gridSearch(self, features, labels):
         'Gridsearch with Cross Validation'
 
@@ -300,28 +287,41 @@ class Anomaly_Seeker(Seeker):
         print(clf.best_estimator_)
         print(clf.cv_results_)
         print(clf.score(X_test, y_test))
-    
-    def train_model(self, modelName='RFC', permutation_importance_flag=True, plotting_flag=True):
+
+    def train_model(self, modelName='DecisionFunction', permutation_importance_flag=False, plotting_flag=True):
         print('Preparation...')
         try:
-            feature_set = pd.read_csv('resources/feature_set_articles.csv')
+            feature_set = pd.read_csv('resources/feature_set_newsfeeds_new.csv')
         except FileNotFoundError:
-            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds_articles')
+            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
         
-        #cols_to_include = ['label', 'entropy_ad_statistic_two_sample', 'perplexity_scaled_ad_statistic_two_sample', 'num_special_chars_ad_statistic','avg_sentence_length_ad_statistic', 'flesch_score_ad_statistic']
-        cols_to_include = ['label', 'entropy', 'perplexity_scaled']
-        cols_to_exclude = [col for col in feature_set.columns if col not in cols_to_include]
-        feature_set = feature_set.drop(columns=cols_to_exclude)
+        columns_to_keep = [
+            'length_ad_statistic',
+            'named_entities_ad_statistic',
+            'avg_token_probability_ad_statistic',
+            #'num_special_chars_ad_statistic',
+            #'avg_sentence_length_ad_statistic',
+            #'flesch_score_ad_statistic',
+            #'entropy_ad_statistic_two_sample',
+            #'perplexity_scaled_ad_statistic_two_sample',
+            'label'
+        ]
+        feature_set = feature_set[columns_to_keep]
         
         labels = feature_set.label
         feature_set = feature_set.drop(columns=['label'])
         X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
         
+        if modelName == 'DecisionFunction':
+            print('Use Own Decision Function')
+            y_pred = X_test.apply(lambda row: 1 if (row == 1).sum() > (row == -1).sum() else -1, axis=1)
+            
         if modelName == 'RFC':
             print('Training Random Forest Classifier')
             clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
             clf = clf.fit(X_train, y_train)
             y_pred = clf.predict(X_test)
+            print(y_pred)
             
         elif modelName == 'SVM':
             clf = SVC(random_state=420)
@@ -381,6 +381,7 @@ class Anomaly_Seeker(Seeker):
         
         joblib.dump(clf, f"resources/models/anomaly_detector_{modelName}.joblib")
     
+    'Detection Methods'
     def detect_secret(self, newsfeed: list[str]) -> bool:
         return self.detect_secret_in_article(newsfeed)
     
@@ -398,14 +399,16 @@ class Anomaly_Seeker(Seeker):
             return False #1
     
     def detect_secret_in_newsfeed(self, newsfeed: list[str]) -> bool:
-        articles = [clean(article) for article in newsfeed]
-        features = self.extract_features_in_newsfeed(articles)
-        clf = joblib.load('resources/models/anomaly_detector_newsfeeds.joblib')
-        prediction = clf.predict(features)
+        newsfeed_cleaned = [clean(article) for article in newsfeed]
+        features = self.extract_features_in_newsfeed(newsfeed_cleaned)
+        prediction = features.apply(lambda row: 1 if (row == 1).sum() > (row == -1).sum() else -1, axis=1)
+        
+        #clf = joblib.load('resources/models/anomaly_detector_newsfeeds.joblib')
+        #prediction = clf.predict(features)
         #print('Prediction:', prediction)
-
         return True if prediction == -1 else False
 
+    'Plotting Methods'
     def plot_predictions(self, df, modelname='RFC'):
         predictions = df.prediction
         features = df.drop(columns=['prediction'])

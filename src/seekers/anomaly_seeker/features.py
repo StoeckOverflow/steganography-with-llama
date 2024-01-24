@@ -65,25 +65,37 @@ def ad_test_normal_dist(article_scores):
     for i in range(len(result.critical_values)):
         sl, cv = result.significance_level[i], result.critical_values[i]
         return -1 if result.statistic > cv else 1
-    
+
+def ecdf(data):
+    """Compute ECDF for a one-dimensional array of measurements."""
+    # Sort the data
+    x = np.sort(data)
+    # Calculate ECDF values
+    y = np.arange(1, len(x) + 1) / len(x)
+    return lambda t: np.interp(t, x, y, left=0, right=1)
+
+
 def ad_test_two_sample(baseline_scores, article_scores):
 
     combined_sample = np.concatenate([baseline_scores, article_scores])
 
     # empirical cumulative distribution functions (ECDF)
-    ecdf1 = stats.ecdf(baseline_scores)
-    ecdf2 = stats.ecdf(article_scores)
+    ecdf1 = ecdf(baseline_scores)
+    ecdf2 = ecdf(article_scores)
 
     # Compute the Anderson-Darling statistic
     n1 = len(baseline_scores)
     n2 = len(article_scores)
     n = n1 * n2 / (n1 + n2)
     
-    ad_statistic = n * np.sum((ecdf1(combined_sample) - ecdf2(combined_sample))**2)
+    # Calculate ECDF values for the combined sample
+    ecdf1_values = ecdf1(combined_sample)
+    ecdf2_values = ecdf2(combined_sample)
+    
+    ad_statistic = n * np.sum((ecdf1_values - ecdf2_values)**2)
 
     # Compare the statistic to critical values or return it
     # Note: Critical values for the two-sample test are not standard and would normally require simulation or a lookup table
-    #return ad_statistic
     return -1 if ad_statistic > 0.5 else 1
 
 def t_test(baseline_scores, article_scores):
