@@ -1,32 +1,12 @@
-#import json
-#import sys
-#from src.hiders.synonym_hider import SynonymHider
-#from src.models import DynamicPOE
-from src.seekers.anomaly_seeker.anomaly_seeker import Anomaly_Seeker
+import json
+import sys
+from src.seekers.semsta_seeker.semStaSeeker import SemStaSeeker
 from src.seekers.anomaly_seeker.dataset import create_newsfeed_dataset, evaluate_perplexity_threshold, plot_and_save_perplexity_statistics
 
 if __name__ == "__main__":
-     # Dataset creation
-     #create_newsfeed_dataset()
-     #perplexities = evaluate_perplexity_threshold()
-     #plot_and_save_perplexity_statistics(perplexities)
-     
-     # Seeker
-     seeker = Anomaly_Seeker(disable_tqdm=False)
-     seeker.train_model('RFC')
-     #seeker.detection_interface()
-     
-     
-     # Hider
-     '''
-     #data = sys.stdin.read()
-     #json_data = json.loads(data)
-     #feed_array = json_data['feed']
-     #feed_secret = json_data['secret']
-          
-     #synonym_hider = SynonymHider(disable_tqdm=False)
-     #synonym_hider.hide_secret(feed_array, feed_secret, output='stdout')
-     
-     #dpoe = DynamicPOE(disable_tqdm=True)
-     #dpoe.recover_interface()
-     '''
+     path = sys.stdin.read()
+     json_data = json.loads(path)
+     newsfeed = json_data['feed']
+     seeker = SemStaSeeker(disable_tqdm=False)
+     decision = seeker.detect_secret(newsfeed)
+     print(decision)
