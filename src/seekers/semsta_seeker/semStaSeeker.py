@@ -1,4 +1,5 @@
 from ..seeker import Seeker
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,6 +26,8 @@ class SemStaSeeker(Seeker):
         print(f"Classification Output after exp conversion: {probabilities}")
         
         not_clean_prob = probabilities[:, 1]
-        decision = not_clean_prob > 0.5
+        decision = np.mean(not_clean_prob.detach().numpy()) > 0.5
+        #bools = not_clean_prob > 0.5
+        #decision = bools.any()
         
-        return decision.item()
+        return decision
