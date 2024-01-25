@@ -7,6 +7,8 @@ from .fusionComponent import FusionComponent
 from .classifier import Classifier
 from .semanticFeatureExtractor import SemanticFeatureExtractor
 from .statisticalFeatureExtractor import StatisticalFeatureExtractor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 class SemStaSeeker(Seeker):
     
@@ -15,7 +17,101 @@ class SemStaSeeker(Seeker):
         self.semantic_feature_extractor = SemanticFeatureExtractor(disable_tqdm=disable_tqdm, output_size=output_size)
         self.statistical_feature_extractor = StatisticalFeatureExtractor(hidden_dim=statistical_dim, disable_tqdm=disable_tqdm)
         self.classifier = Classifier(semantic_dim, num_classes)
-    
+
+    def train_test_split(self, newsfeeds, labels, test_size=0.2):
+        return train_test_split(newsfeeds, labels, test_size=test_size, random_state=42)
+
+
+    def train_classifier(self, train_newsfeeds, train_labels, num_epochs=10, learning_rate=0.001, batch_size=32):
+        optimizer = torch.optim.Adam(self.classifier.parameters(), lr=learning_rate)
+        criterion = nn.BCEWithLogitsLoss()
+
+        for epoch in range(num_epochs):
+            total_loss = 0.0
+            # Shuffle and create batches
+            permutation = torch.randperm(len(train_newsfeeds))
+            for i in range(0, len(train_newsfeeds), batch_size):
+                indices = permutation[i:i + batch_size]
+                batch_newsfeeds = [train_newsfeeds[j] for j in indices]
+                batch_labels = torch.tensor([train_labels[j] for j in indices], dtype=torch.float32)
+
+                # Rest of your training code inside this loop
+                batch_semantic_features = self.semantic_feature_extractor.extract_features(batch_newsfeeds)
+                batch_statistical_features = self.statistical_feature_extractor.get_statistical_features(batch_newsfeeds)
+                fused_features = self.fusion_component(batch_semantic_features, batch_statistical_features)
+
+                classifier_output = self.classifier(fused_features)
+                loss = criterion(classifier_output, torch.tensor([batch_labels], dtype=torch.float32))
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss/len(permutation):.4f}')
+
+
+
+    def train_classifier(self, train_newsfeeds, train_labels, num_epochs=10, learning_rate=0.001):
+        
+        optimizer = torch.optim.Adam(self.classifier.parameters(), lr=learning_rate)
+        criterion = nn.BCEWithLogitsLoss()
+
+        for epoch in range(num_epochs):
+            total_loss = 0.0
+            
+            for newsfeed, label in zip(train_newsfeeds, train_labels):
+                semantic_features = self.semantic_feature_extractor.extract_features(newsfeed)
+                statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
+                fused_features = self.fusion_component(semantic_features, statistical_features)
+
+                classifier_output = self.classifier(fused_features)
+                loss = criterion(classifier_output, torch.tensor([label], dtype=torch.float32))
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss/len(train_newsfeeds):.4f}')
+            
+    def evaluate_classifier(self, test_newsfeeds, test_labels):
+        self.classifier.eval()
+        predictions = []
+        
+        with torch.no_grad():
+            for newsfeed in test_newsfeeds:
+                semantic_features = self.semantic_feature_extractor.extract_features(newsfeed)
+                statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
+                fused_features = self.fusion_component(semantic_features, statistical_features)
+
+                classifier_output = self.classifier(fused_features)
+                predicted_label = torch.round(torch.sigmoid(classifier_output)).item()
+                predictions.append(predicted_label)
+        
+        predictions = [int(p) for p in predictions]
+        test_labels = [int(label) for label in test_labels]
+
+        accuracy = sum([pred == label for pred, label in zip(predictions, test_labels)]) / len(test_labels)
+        precision = precision_score(test_labels, predictions)
+        recall = recall_score(test_labels, predictions)
+        f1 = f1_score(test_labels, predictions)
+
+        print(f"Test Accuracy: {accuracy:.4f}")
+        print(f"Precision: {precision:.4f}")
+        print(f"Recall: {recall:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+
+        self.classifier.train()
+
+    def train_and_evaluate_model(self, all_newsfeeds, all_labels):
+        
+        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(all_newsfeeds, all_labels)
+        self.statistical_feature_extractor.train_autoencoder(train_newsfeeds)
+        self.train_classifier(train_newsfeeds, train_labels)
+        self.evaluate_classifier(test_newsfeeds, test_labels)
+
     def detect_secret(self, newsfeed: list[str]) -> bool:
         semantic_features = self.semantic_feature_extractor(newsfeed)
         statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
