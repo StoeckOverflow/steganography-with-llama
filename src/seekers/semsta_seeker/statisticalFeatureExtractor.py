@@ -30,7 +30,7 @@ class StatisticalFeatureExtractor():
         self.hidden_dim = hidden_dim
         self.tfidf_vectorizer = TfidfVectorizer(max_features=self.input_dim)
         self.auto_encoder = None
-        self.disable_tqdm = disable_tqdm      
+        self.disable_tqdm = disable_tqdm  
     
     def train_autoencoder(self, newsfeed_directory_path, num_epochs=10, learning_rate=0.001):
         train_newsfeeds = self.load_newsfeeds(newsfeed_directory_path)
@@ -73,22 +73,15 @@ class StatisticalFeatureExtractor():
         feed_paths = glob.glob(newsfeeds_files_pattern)
         feed_paths = sorted(feed_paths)
         all_newsfeeds = []
-        i = 0
         for feed_path in feed_paths:
-            if (i <= 2) or (i >= 6 and i <= 8) or (i >= 12 and i <= 14): # manual train testsplit of different classes
-                with open(feed_path, 'r') as file:
-                    parsed_feed = json.load(file)
-                feed_array = parsed_feed['feed']
-                all_newsfeeds.append(feed_array)
-            i+=1
+            with open(feed_path, 'r') as file:
+                parsed_feed = json.load(file)
+            feed_array = parsed_feed['feed']
+            all_newsfeeds.append(feed_array)
         
         return all_newsfeeds
 
     def get_statistical_features(self, newsfeed):
-        tfidf_vectors = self.tfidf_vectorizer.fit_transform(newsfeed)
-        tfidf_vectors_dense = tfidf_vectors.todense()
-        tfidf_tensor = torch.tensor(tfidf_vectors_dense, dtype=torch.float32)
-
         if self.auto_encoder is None:
             try:
                 self.auto_encoder = AutoEncoder(self.input_dim, self.hidden_dim)
