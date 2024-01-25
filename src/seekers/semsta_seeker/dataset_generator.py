@@ -6,6 +6,7 @@ import glob
 from src.hiders.synonym_hider import SynonymHider
 from src.models import DynamicPOE
 import base64
+import re
 
 class datasetGenerator():
     
@@ -133,13 +134,36 @@ class datasetGenerator():
         base64_encoded_secret = base64.b64encode(random_bytes).decode('utf-8')
         return base64_encoded_secret
 
+    def truncate_string_to_word_limit(self, string, word_limit):
+        """
+        Truncates the string to a word limit, and adjusts to end at a sentence boundary.
+        """
+        words = string.split()
+        if len(words) <= word_limit:
+            return string
+
+        truncated_str = ' '.join(words[:word_limit])
+        sentence_endings = list(re.finditer(r'(\.|\?|!)\s', truncated_str))
+
+        if sentence_endings:
+            last_sentence_end = sentence_endings[-1].end()
+            if last_sentence_end > 20:
+                result = truncated_str[:last_sentence_end].strip()
+            else:
+                result = truncated_str.strip()
+            return result
+        else:
+            return truncated_str
+
     def process_chunk(self, chunk, file_count):
         cleaned_content = [content.strip() for content in chunk]
-        grouped_content = [cleaned_content[i:i + 30] for i in range(0, len(cleaned_content), 30)]
         
+        grouped_content = [cleaned_content[i:i + 30] for i in range(0, len(cleaned_content), 30)]
+
         for group in grouped_content:
+            truncated_group = [self.truncate_string_to_word_limit(s, 100) for s in group]
             json_object = {
-                "feed": group,
+                "feed": truncated_group,
                 "secret": self.generate_base64_secret()
             }
             with open(os.path.join('resources','feeds','testfeeds_kaggle',f'feed_{file_count}.json'), 'w') as json_file:
@@ -154,4 +178,3 @@ class datasetGenerator():
 
         for chunk in pd.read_csv(csv_file_path, chunksize=chunk_size, usecols=['content']):
             file_count = self.process_chunk(chunk['content'].tolist(), file_count)
-
