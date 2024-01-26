@@ -27,7 +27,7 @@ class datasetGenerator():
             - Label is saved in the filename doctored_feed_{formatted_number}.json;{label}
         '''
         
-        feeds = glob.glob(os.path.join(clean_feeds_path,'*.json'))
+        feeds = sorted(glob.glob(os.path.join(clean_feeds_path,'*.json')))
         
         num_feeds = len(feeds)
         num_arithmetic = int(num_feeds * 0.3)
@@ -166,7 +166,8 @@ class datasetGenerator():
                 "feed": truncated_group,
                 "secret": self.generate_base64_secret()
             }
-            with open(os.path.join('resources','feeds','testfeeds_kaggle',f'feed_{file_count}.json'), 'w') as json_file:
+            formatted_file_count = "{:04d}".format(file_count)
+            with open(os.path.join('resources','feeds','testfeeds_kaggle',f'feed_{formatted_file_count}.json'), 'w') as json_file:
                 json.dump(json_object, json_file, indent=4)
             file_count += 1
 
