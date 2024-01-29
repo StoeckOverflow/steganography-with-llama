@@ -580,3 +580,5 @@ resources/t5-large/*
 *.zip
 *.bin
 *.csv
+*;-1
+*;1

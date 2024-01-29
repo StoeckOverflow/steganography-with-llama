@@ -37,7 +37,7 @@ class datasetGenerator():
         if not os.path.exists(doctored_articles_path):
             os.makedirs(doctored_articles_path)
         
-        i, arithmetic_count, synonym_count = 0, 0, 0
+        i, arithmetic_count, synonym_count = 541, 114, 426
         if newsfeed_or_article_labeling == 'article':
             for path in tqdm(feeds, desc="Process feeds"):
                 print(f"Current File: {path}\nNumber: {i}")
@@ -84,7 +84,7 @@ class datasetGenerator():
                 i += 1
         
         elif newsfeed_or_article_labeling == 'newsfeed':
-            for path in tqdm(feeds, desc="Process feeds"):
+            for path in tqdm(feeds[545:], desc="Process feeds"):
                 print(f"Current File: {path}\nNumber: {i}")
                 
                 with open(path, 'r') as file:
@@ -104,8 +104,8 @@ class datasetGenerator():
                     try:
                         dynamic_poe = DynamicPOE(disable_tqdm=False)
                         doctored_newsfeeds, rest_length = dynamic_poe.hide(feed_secret, feed_array, labeled_for_training_flag=True)
-                    except IndexError:
-                        print('Index Error')
+                    except Exception as e:
+                        print(f"An exception occurred: {e}")
                         label = 1
                         result_newsfeed['feed'] = feed_array
                         continue
@@ -116,7 +116,7 @@ class datasetGenerator():
                     label = 1
                     result_newsfeed['feed'] = feed_array
 
-                formatted_number = "{:03d}".format(i)
+                formatted_number = "{:04d}".format(i)
                 
                 with open(os.path.join(doctored_articles_path, f"doctored_feed_{formatted_number}.json;{label}"), 'w') as file:
                     json.dump(result_newsfeed, file, indent=4)

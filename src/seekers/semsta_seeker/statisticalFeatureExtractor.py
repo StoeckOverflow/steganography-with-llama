@@ -5,6 +5,7 @@ import os
 from tqdm import tqdm
 import glob
 import json
+import pickle
 
 class AutoEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim):
@@ -52,7 +53,7 @@ class StatisticalFeatureExtractor():
                 tfidf_vectors_dense = tfidf_vectors.todense()
                 tfidf_tensor = torch.tensor(tfidf_vectors_dense, dtype=torch.float32)
                     
-                input_dim = tfidf_vectors.shape[1]
+                #input_dim = tfidf_vectors.shape[1]
                     
                 outputs = self.auto_encoder(tfidf_tensor)
                 loss = criterion(outputs, tfidf_tensor)
@@ -65,6 +66,9 @@ class StatisticalFeatureExtractor():
             
             avg_loss = total_loss / num_batches
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}')
+        
+        with open('resources/models/tfidf_vectorizer.pkl', 'wb') as f:
+            pickle.dump(self.tfidf_vectorizer, f)
         
         torch.save(self.auto_encoder.state_dict(), 'resources/models/autoencoder_model.pth')
 
@@ -87,12 +91,18 @@ class StatisticalFeatureExtractor():
                 self.auto_encoder = AutoEncoder(self.input_dim, self.hidden_dim)
                 self.auto_encoder.load_state_dict(torch.load('resources/models/autoencoder_model.pth'))
                 self.auto_encoder.eval()
+                with open('resources/models/tfidf_vectorizer.pkl', 'rb') as f:
+                    self.tfidf_vectorizer = pickle.load(f)
             except FileNotFoundError:
                 print("Model file not found. Starting training process.")
                 self.train_autoencoder(newsfeed_directory_path='resources/feeds/doctored_feeds_articles')
                 self.auto_encoder.eval()
 
         with torch.no_grad():
+            tfidf_vectors = self.tfidf_vectorizer.transform(newsfeed)
+            tfidf_vectors_dense = tfidf_vectors.todense()
+            tfidf_tensor = torch.tensor(tfidf_vectors_dense, dtype=torch.float32)
+            
             encoded_features = self.auto_encoder.encoder(tfidf_tensor)
         
         return encoded_features
