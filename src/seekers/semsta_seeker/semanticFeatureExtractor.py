@@ -1,6 +1,6 @@
 from transformers import BertTokenizer, BertModel
-import torch
 from torch import nn
+import torch
 
 class SemanticFeatureExtractor(nn.Module):
     

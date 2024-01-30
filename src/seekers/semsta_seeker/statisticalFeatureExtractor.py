@@ -1,10 +1,6 @@
 import torch
 from torch import nn
 from sklearn.feature_extraction.text import TfidfVectorizer
-import os
-from tqdm import tqdm
-import glob
-import json
 import pickle
 
 class AutoEncoder(nn.Module):
@@ -23,7 +19,7 @@ class AutoEncoder(nn.Module):
         x = self.encoder(x)
         x = self.decoder(x)
         return x
-    
+   
 class StatisticalFeatureExtractor():
     
     def __init__(self, disable_tqdm, hidden_dim=128):
@@ -33,8 +29,8 @@ class StatisticalFeatureExtractor():
         self.auto_encoder = None
         self.disable_tqdm = disable_tqdm  
     
-    def train_autoencoder(self, newsfeed_directory_path, num_epochs=10, learning_rate=0.001):
-        train_newsfeeds = self.load_newsfeeds(newsfeed_directory_path)
+    def train_autoencoder(self, train_newsfeeds, num_epochs=50, learning_rate=0.001):
+        
         flat_train_newsfeeds = [item for sublist in train_newsfeeds for item in sublist]
         self.tfidf_vectorizer.fit(flat_train_newsfeeds)
         
@@ -71,19 +67,6 @@ class StatisticalFeatureExtractor():
             pickle.dump(self.tfidf_vectorizer, f)
         
         torch.save(self.auto_encoder.state_dict(), 'resources/models/autoencoder_model.pth')
-
-    def load_newsfeeds(self, newsfeeds_directory_path):
-        newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
-        feed_paths = glob.glob(newsfeeds_files_pattern)
-        feed_paths = sorted(feed_paths)
-        all_newsfeeds = []
-        for feed_path in feed_paths:
-            with open(feed_path, 'r') as file:
-                parsed_feed = json.load(file)
-            feed_array = parsed_feed['feed']
-            all_newsfeeds.append(feed_array)
-        
-        return all_newsfeeds
 
     def get_statistical_features(self, newsfeed):
         if self.auto_encoder is None:
