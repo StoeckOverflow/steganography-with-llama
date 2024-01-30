@@ -132,7 +132,7 @@ class ArithmeticProbOrdHider:
         doctored_article = self.update_feed(doctored_article, self.get_valid_tokens(doctored_article, get_end_condition=True))
         return doctored_article, []
     
-    def hide_in_whole_newsfeed(self, news_feed: List[str], binary_secrets: List[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5) -> Dict[str, List[str]]:
+    def hide_in_whole_newsfeed(self, news_feed: List[str], binary_secrets: List[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5, labeled_for_training_flag=False) -> Dict[str, List[str]]:
         """
         Encodes the binary_secret in the newsfeed.
 
@@ -158,7 +158,10 @@ class ArithmeticProbOrdHider:
             doctored_newsfeed.append(doctored_article)
             if len(remaining_secrets) == 0:
                 break
-        return {"feed": doctored_newsfeed + news_feed[len(doctored_newsfeed):]}
+        if labeled_for_training_flag:
+            return {"feed": doctored_newsfeed + news_feed[len(doctored_newsfeed):]}, len(news_feed[len(doctored_newsfeed):])
+        else:
+            return {"feed": doctored_newsfeed + news_feed[len(doctored_newsfeed):]}
 
     @staticmethod
     def get_next_possible_token(next_token_probs: List[str], news_article: int, i: int) -> Union[str, bool]:

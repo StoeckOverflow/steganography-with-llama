@@ -1,4 +1,9 @@
 */__pycache__/*
 .git
 .gitignore
-resources/
+resources/feeds
+resources/figures
+resources/t5-large
+documentation
+test
+load_T3_model_locally.sh

@@ -1,6 +1,5 @@
 # Mac folder order
 .DS_store
-resources/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -147,6 +146,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+*.json
 
 # Pyre type checker
 .pyre/
@@ -565,3 +565,18 @@ FodyWeavers.xsd
 
 # Llama Model
 *.gguf
+*.model
+*.bin
+
+resources/bert-base-cased/*
+resources/t5-large/*
+
+# Models
+#*.joblib
+#*.model
+
+# Data
+*.json
+*.zip
+*.bin
+*.csv
