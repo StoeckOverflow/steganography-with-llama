@@ -4,6 +4,7 @@ from typing import Callable
 import numpy as np
 from tqdm import tqdm
 from typing import List
+import torch
 
 encode_secret = lambda secret: bin(int.from_bytes(secret.encode(), "little"))
 
@@ -66,8 +67,10 @@ def get_probabilities(llm:Llama, tokenized_text, text: str):
 
 'Entropy'  
 def get_entropy(softmax_logits):
-    log_softmax_logits = np.log(softmax_logits)
-    neg_entropy = softmax_logits * log_softmax_logits
+    # Add a small value to probabilities to avoid log(0)
+    smoothed_probs = np.clip(softmax_logits, 1e-10, 1.0)
+    log_softmax_logits = np.log(smoothed_probs)
+    neg_entropy = smoothed_probs * log_softmax_logits
     entropy = -neg_entropy.sum(-1)
 
     return np.mean(entropy)
@@ -118,12 +121,29 @@ def softmax(x):
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum(axis=-1, keepdims=True)
 
-def get_perplexity(softmax_logits, tokenized_text):
-    log_likelihood = 0.0
-    for i, token_id in enumerate(tokenized_text):
-        prob = softmax_logits[i, token_id] if softmax_logits[i, token_id] != 0 else softmax_logits[i, token_id]+1e-10
-        log_likelihood += np.log(prob)
+def get_perplexity(model, tokenizer, text):
+    token_ids = tokenizer.encode(text, return_tensors='pt', add_special_tokens=True)
+    model.eval()
 
-    avg_neg_log_likelihood = -log_likelihood / len(tokenized_text)
+    with torch.no_grad():
+        # Generate model outputs. The logits are the outputs before softmax
+        outputs = model(token_ids)
+        logits = outputs.logits
 
+        # Apply softmax to logits to get probabilities
+        softmax_probs = torch.nn.functional.softmax(logits, dim=-1)
+
+        log_likelihood = 0.0
+        for i, token_id in enumerate(token_ids[0]):
+            # Skip special tokens like [CLS] and [SEP]
+            if token_id in [tokenizer.cls_token_id, tokenizer.sep_token_id]:
+                continue
+
+            # Get the probability of the actual token
+            prob = softmax_probs[0, i, token_id].item()
+            # Add a small value to avoid log(0) if the probability is zero
+            prob = max(prob, 1e-10)
+            log_likelihood += np.log(prob)
+
+    avg_neg_log_likelihood = -log_likelihood / (len(token_ids[0]) - 2)  # Subtract 2 for [CLS] and [SEP]
     return np.exp(avg_neg_log_likelihood)

@@ -1,455 +1,272 @@
-from .features import *
-from ..seeker import Seeker
-from tqdm import tqdm
-from ...utils.string_modification import clean
-from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
-import matplotlib.pyplot as plt
-import numpy as np
+import os
+import json
 import glob
+import random
+import joblib
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from collections import Counter
-from sklearn.preprocessing import StandardScaler
+from textblob import TextBlob
+from tqdm import tqdm
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import NearestNeighbors
-import joblib
-import pandas as pd
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_classif
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV, StratifiedKFold
+from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
 from sklearn.inspection import permutation_importance
 from sklearn.decomposition import PCA
-import json
-import os
+
+from .features import *
+from ..seeker import Seeker
+from ...utils.string_modification import clean
+from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
+from ...utils.bert_utils import get_bert_next_token_probability_and_logits
 
 class Anomaly_Seeker(Seeker):
 
     def __init__(self, disable_tqdm=False) -> None:
         super().__init__(disable_tqdm)
-        perplexity_statistics = pd.read_csv('resources/perplexity_statistics.csv')
-        self.mean_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Mean Perplexity']['Value'].iloc[0]
-        self.std_perplexity = perplexity_statistics[perplexity_statistics['Statistic'] == 'Standard Deviation']['Value'].iloc[0]
-        self.baseline_feature_set = pd.read_csv('resources/baseline_features.csv')
+        self.base_model = self.bert_model # Use BERT as base model instead of LLAMA
+        self.random_state = 420
 
-    'Extract Article Features and Labels for all Newsfeeds'
-    def extract_features_in_articles(self, articles):
-        features = []
-        for article in articles:
+    def extract_features_in_newsfeed(self, newsfeed):
+        feature_sets = []
+
+        for article in tqdm(newsfeed, desc='Extracting Features', disable=self.disable_tqdm):
             article = str(article)
-            
-            # Standard Text Features
-            tokens = self.base_model.tokenizer().encode(article)
-            length = len(article)
-            sentences = article.split('.')
-            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
-            type_token_ratio = len(set(tokens)) / len(tokens) if len(tokens) > 0 else 0
-            flesch_score = flesch_reading_ease(article)
-            vocab_richness = len(set(tokens)) / length if length > 0 else 0
+            article = clean(article)
+
+            article_length = len(article)
             num_special_chars = special_chars_count(article)
-            #entropy = shannon_entropy(article)
-            sentiment = sentiment_consistency(article)
-            named_entities = named_entity_analysis(article)
-            repetition = repetition_patterns(article)
-            
-            # Llama Features
-            probs = get_probabilities(self.base_model, tokens, article)
-            avg_token_probability = np.mean(probs)
-            
-            # Reflects the diversity or uncertainty of token predictions.
-            # Tokens with low log-probability are less suspicious in high-entropy (uniform) distributions
-            # High Entropy: Indicates uncertainty, many tokens are equally likely
-            # Low Entropy: (Spiky Distribution): Indicates certainty, fewer tokens are likely
-            # 1 Compute the entropy of the token distribution at each position in the text.
-            # 2 Assess the log-probability of the actual token at each position.
-            # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
-            entropy = get_entropy(probs)
-            
-            # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
-            # Lower values indicate a more predictable and effective model
-            perplexity = get_perplexity(probs, tokens)
-            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
+            sentences = article.split('. ')
+            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
+            flesch_score = flesch_reading_ease(article)
+            sentiment = TextBlob(article).sentiment.polarity
+            true_token_probs, softmax_logits = get_bert_next_token_probability_and_logits(self.base_model, self.bert_tokenizer, article, initial_context_length=5)
+            avg_token_probability = np.mean(true_token_probs)
+            entropy = get_entropy(softmax_logits)
+            perplexity = get_perplexity(self.bert_model, self.bert_tokenizer, article)
 
-            article_features = [length, 
-                                avg_sentence_length, 
-                                type_token_ratio, 
-                                flesch_score, 
-                                vocab_richness, 
-                                num_special_chars, 
-                                entropy, 
-                                sentiment, 
-                                named_entities, 
-                                repetition, 
-                                avg_token_probability,
-                                perplexity_scaled
-                                ]
-            
-            features.append(article_features)
-        
-        scaler = StandardScaler()
-        '''
-        columns_to_scale = ['length', 'avg_sentence_length','type_token_ratio', 'flesch_score', 'vocab_richness','num_special_chars', 'entropy', 
-                            'sentiment', 'named_entities', 'repetition', 'avg_token_probability'] 
-        columns_not_to_scale = [col for col in features.columns if col not in columns_to_scale]
-        '''
-        features_array = np.array(features)
-        transformed_features = scaler.fit_transform(features_array[:, :-1])
-        transformed_features = np.column_stack((transformed_features, features_array[:, -1]))
-        
-        df = pd.DataFrame(transformed_features, columns=[
-                                                        'length', 
-                                                        'avg_sentence_length', 
-                                                        'type_token_ratio', 
-                                                        'flesch_score', 
-                                                        'vocab_richness', 
-                                                        'num_special_chars', 
-                                                        'entropy', 
-                                                        'sentiment', 
-                                                        'named_entities', 
-                                                        'repetition', 
-                                                        'avg_token_probability',
-                                                        'perplexity_scaled'
-                                                        ])
-        return df
+            feature_sets.append([article_length, avg_sentence_length, flesch_score, sentiment, num_special_chars, entropy, avg_token_probability, perplexity])
 
-    def extract_features_and_labels_in_articles(self, newsfeeds_directory_path, save_flag=True):
-        print('Start Feature Extraction...')
-        newsfeeds_files_pattern = os.path.join(newsfeeds_directory_path,'*.json')
-        all_labels = []
-        feed_paths = glob.glob(newsfeeds_files_pattern)
-        i = 0
-        for feed_path in tqdm(feed_paths, desc='Extract Features of Newsfeeds', disable=self.disable_tqdm):
-            with open(feed_path, 'r') as file:
-                parsed_feed = json.load(file)
-            feed_array = parsed_feed['feed']
-            feed_labels = parsed_feed['labels']
-            new_features = self.extract_features_in_articles(feed_array)
-            if i == 0:
-                feature_set = new_features
-                i += 1
-            else:
-                feature_set = pd.concat([feature_set, new_features], ignore_index=True)
-            all_labels.extend(feed_labels)
-        
-        feature_set['label'] = all_labels
-        
-        if save_flag:
-            print('Save feature_set to csv...')
-            feature_set.to_csv('resources/feature_set_articles.csv', index=False)
-            print('feature-set saved')
+        # Convert to NumPy array for easier calculations
+        feature_array = np.array(feature_sets)
+
+        # Calculate different aggregations
+        mean_features = np.mean(feature_array, axis=0)
+        var_features = np.var(feature_array, axis=0)
+        min_features = np.min(feature_array, axis=0)
+        max_features = np.max(feature_array, axis=0)
+        std_features = np.std(feature_array, axis=0)
+
+        # Combine all features into one DataFrame
+        columns = ['article_length', 'sentence_length', 'flesch_score', 'sentiment', 'num_special_chars', 'entropy', 'token_probability', 'perplexity']
+        aggregated_features = np.concatenate([mean_features, var_features, min_features, max_features, std_features])
+        aggregated_columns = [f"{agg}_{col}" for agg in ['mean', 'var', 'min', 'max', 'std'] for col in columns]
+        feature_set = pd.DataFrame([aggregated_features], columns=aggregated_columns)
         
         return feature_set
 
-    'Extract Features and Labels in all Newsfeeds for best Match Values in Statistical Tests'
-    def extract_features_in_newsfeed(self, newsfeed):
-
-        article_features = []
-        for article in tqdm(newsfeed, desc='Extracting features', disable=self.disable_tqdm):
-            article = str(article)
-                
-            # Standard Text Features
-            sentences = article.split('.')
-            num_special_chars = special_chars_count(article)
-            avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
-            flesch_score = flesch_reading_ease(article)
-                
-            # Llama Features
-            tokens = self.base_model.tokenizer().encode(article)
-            probs = get_probabilities(self.base_model, tokens, article)
-            avg_token_probability = np.mean(probs)
-            entropy = get_entropy(probs)
-            perplexity = get_perplexity(probs, tokens)
-            perplexity_scaled = (perplexity - self.std_perplexity) / self.mean_perplexity
-
-            article_features_entry = [ 
-                                avg_sentence_length,
-                                flesch_score,
-                                num_special_chars, 
-                                entropy,
-                                avg_token_probability,
-                                perplexity_scaled
-                                ]
-                
-            article_features.append(article_features_entry)
-
-        feature_set = pd.DataFrame(article_features, columns=[
-                                                            'avg_sentence_length',
-                                                            'flesch_score',  
-                                                            'num_special_chars', 
-                                                            'entropy',
-                                                            'perplexity_scaled'])
-        
-        feature_matrix = pd.DataFrame()
-        
-        feature_matrix.at[0,'num_special_chars_ad_statistic'] = ad_test_normal_dist(feature_set['num_special_chars'])
-        feature_matrix.at[0,'avg_sentence_length_ad_statistic'] = ad_test_normal_dist(feature_set['avg_sentence_length'])
-        feature_matrix.at[0,'flesch_score_ad_statistic'] = ad_test_normal_dist(feature_set['flesch_score_ad_statistic'])
-        feature_matrix.at[0,'entropy_ad_statistic_two_sample'] = ad_test_two_sample(self.baseline_feature_set['entropy'], feature_set['entropy'])
-        feature_matrix.at[0,'perplexity_scaled_ad_statistic_two_sample'] = ad_test_two_sample(self.baseline_feature_set['entropy'], feature_set['perplexity_scaled'])
-
-        return feature_matrix
 
     def extract_features_and_labels_in_newsfeeds(self, newsfeeds_directory_path, save_flag=True):
         print('Start Feature Extraction...')        
-        
+
         benign = os.path.join(newsfeeds_directory_path, '*;1')
         malicious = os.path.join(newsfeeds_directory_path, '*;-1')
 
         feed_paths_benign = glob.glob(benign)
         feed_paths_malicious = glob.glob(malicious)
         feed_paths = feed_paths_benign + feed_paths_malicious
-        feed_paths = sorted(feed_paths)
+        random.shuffle(feed_paths)
         
-        i = 0
-        #feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
         feature_set = pd.DataFrame()
-        for feed_path in feed_paths:
+        for i, feed_path in enumerate(feed_paths):
             print(f"Feed Path: {feed_path}\nIteration: {i}")
             with open(feed_path, 'r') as file:
                 parsed_feed = json.load(file)
             feed_array = parsed_feed['feed']
+
             new_features_frame = self.extract_features_in_newsfeed(feed_array)
-            new_features_frame['label'] = feed_path.split(';')[1]
-            if i == 0:
-                feature_set = new_features_frame
-                i += 1
-            else:
-                feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
-                feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
-                i += 1
-                print(f"Feed with feed_path {feed_path} saved\nNext Iteration: {i}")
-        
-        if save_flag:
-            print('Save feature_set to csv...')
-            feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
-            print('feature-set saved')
-        
-        return feature_set
+            new_features_frame['label'] = int(feed_path.split(';')[-1])  # Extracting label from filename
 
-    'Test Method for Statistical Tests'
-    def extract_features_and_labels_in_newsfeeds_statistical_tests(self):
-        '''
-        Generate synthetic newsfeed dataset for training
-        '''
-        print('Start Feature Extraction...')
-        
-        def extract_features_of_articles_feature_set(article_features):
-        
-            result_frame = pd.DataFrame()
-            
-            for col in article_features.columns:
-                result_frame.at[0, f"{col}_ks_statistic"] = ks_test(self.baseline_feature_set[col], article_features[col])
-                result_frame.at[0, f"{col}_t_statistic"] = t_test(self.baseline_feature_set[col], article_features[col])
-                result_frame.at[0, f"{col}_ad_statistic_two_sample"] = ad_test_two_sample(self.baseline_feature_set[col], article_features[col])
-                result_frame.at[0, f"{col}_ad_statistic"] = ad_test_normal_dist(article_features[col])
-
-            return result_frame     
-        
-        feature_set_articles = pd.read_csv('resources/feature_set_articles.csv')
-        feature_set = pd.DataFrame()
-        num_rows = feature_set_articles.shape[0]
-        chunk_size=30
-        num_chunks = (num_rows + chunk_size - 1) // chunk_size
-        for i in tqdm(range(num_chunks), desc='Process article features', disable=self.disable_tqdm):
-            start_row = i * chunk_size
-            end_row = start_row + chunk_size
-            chunk = feature_set_articles.iloc[start_row:end_row]
-            
-            new_features_frame = extract_features_of_articles_feature_set(article_features=chunk.drop(columns=['label']))
-            new_features_frame['label'] = -1 if any(chunk['label'] == -1) else 1
-            
             feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
+            if save_flag:
+                feature_set.to_csv('resources/feature_set_newsfeeds.csv', index=False)
+            print(f"Feed with feed_path {feed_path} saved\nNext Iteration: {i+1}")
 
-        feature_set.to_csv('resources/feature_set_newsfeeds_new.csv', index=False)
-        
-        percentage_dict = {}
-        
-        for col in feature_set.columns:
-            if col != 'label':
-                equal_count = np.sum(feature_set[col] == feature_set['label'])
-                percentage = (equal_count / len(feature_set)) * 100
-                percentage_dict[col] = percentage
-
-        sorted_percentage_dict = dict(sorted(percentage_dict.items(), key=lambda item: item[1], reverse=True))
-        for col, percentage in sorted_percentage_dict.items():
-            print(f"{col}: {percentage:.2f}%")
+        print('Feature extraction completed.')
+        if save_flag:
+            print('Feature-set saved to csv.')
 
         return feature_set
+
+
+    def train_and_evaluate(self, X_train, y_train, X_test, y_test, model_name, param_dist):
+        print(f'Training {model_name} with RandomizedSearchCV using Stratified Cross Validation')
+        if model_name == 'RFC':
+            clf = RandomForestClassifier(random_state=self.random_state)
+        elif model_name == 'SVM':
+            clf = SVC(random_state=self.random_state)
+
+        # Set up Stratified Cross Validation
+        stratified_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
+
+        random_search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=100, cv=stratified_cv, verbose=2, random_state=self.random_state, n_jobs=-1, scoring='precision')
+        random_search.fit(X_train, y_train)
+        print("Best parameters found: ", random_search.best_params_)
+        clf = random_search.best_estimator_
+        y_pred = clf.predict(X_test)
+
+        self.print_metrics(y_test, y_pred)
+        return clf
     
-    'Model Training and Grid Search'
-    def gridSearch(self, features, labels):
-        'Gridsearch with Cross Validation'
 
-        X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=420, stratify=labels)
-        param_grid = {'n_estimators': [100, 200, 300, 400, 500],
-                          'max_depth': [2, 3, 4, 5, 6, 7, 8, 9, 10]}
-        clf = GridSearchCV(RandomForestClassifier(random_state=0), param_grid, cv=5, scoring='f1')
-        clf.fit(X_train, y_train)
-        print(clf.best_params_)
-        print(clf.best_score_)
-        print(clf.best_estimator_)
-        print(clf.cv_results_)
-        print(clf.score(X_test, y_test))
+    def print_metrics(self, y_test, y_pred):
+        print(f"Precision: {precision_score(y_test, y_pred)}")
+        print(f"Recall: {recall_score(y_test, y_pred)}")
+        print(f"F1-score: {f1_score(y_test, y_pred)}")
 
-    def train_model(self, modelName='DecisionFunction', permutation_importance_flag=False, plotting_flag=True):
-        print('Preparation...')
+
+    def load_or_extract_features(self, features_file, feeds_directory):
         try:
-            feature_set = pd.read_csv('resources/feature_set_newsfeeds_new.csv')
+            feature_set = pd.read_csv(features_file)
+            print("Features loaded from file.")
         except FileNotFoundError:
-            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
-        
-        columns_to_keep = [
-            'length_ad_statistic',
-            'named_entities_ad_statistic',
-            'avg_token_probability_ad_statistic',
-            #'num_special_chars_ad_statistic',
-            #'avg_sentence_length_ad_statistic',
-            #'flesch_score_ad_statistic',
-            #'entropy_ad_statistic_two_sample',
-            #'perplexity_scaled_ad_statistic_two_sample',
-            'label'
-        ]
-        feature_set = feature_set[columns_to_keep]
-        
-        labels = feature_set.label
+            print("Features file not found. Extracting features...")
+            feature_set = self.extract_features_and_labels_in_newsfeeds(feeds_directory)
+        labels = [int(label) for label in feature_set.label]
         feature_set = feature_set.drop(columns=['label'])
-        X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=420, stratify=labels)
+        return feature_set, labels
+
+
+    def train_model(self, modelName='SVM'):
+        print('Preparation...')
+        feature_set, labels = self.load_or_extract_features('resources/features/feature_set_newsfeeds.csv', 'resources/feeds/kaggle')
+
+        # Initial Training
+        clf, X_test, y_test, column_names = self.perform_training(feature_set, labels, modelName)
+
+        self.calculate_and_plot_permutation_importance(clf, X_test, y_test, column_names, modelName)
+
+        # Save the final model
+        joblib.dump(clf, f"resources/models/anomaly_detector_{modelName}.joblib")
+
+
+    def perform_training(self, feature_set, labels, modelName):
+        X_train, X_test, y_train, y_test, column_names = self.prepare_data(feature_set, labels)
+        clf = self.train_and_evaluate(X_train, y_train, X_test, y_test, modelName, self.get_param_dist(modelName))
+        return clf, X_test, y_test, column_names
+    
+
+    def prepare_data(self, feature_set, labels):
+        feature_set = feature_set.fillna(0.0)
+
+        X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=self.random_state, stratify=labels)
+
+        # Using StandardScaler
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        # Selecting features using ANOVA F-value
+        selector = SelectKBest(f_classif, k=25)
+        X_train = selector.fit_transform(X_train, y_train)
+        X_test = selector.transform(X_test)
+
+        # Save scaler and selector for later use
+        joblib.dump(scaler, 'resources/models/scaler.joblib')
+        joblib.dump(selector, 'resources/models/selector.joblib')
+
+        selected_columns_names = feature_set.columns[selector.get_support()]
         
-        if modelName == 'DecisionFunction':
-            print('Use Own Decision Function')
-            y_pred = X_test.apply(lambda row: 1 if (row == 1).sum() > (row == -1).sum() else -1, axis=1)
-            
+        return X_train, X_test, y_train, y_test, selected_columns_names
+    
+
+    def calculate_and_plot_permutation_importance(self, clf, X_test, y_test, column_names, modelName):
+        print('Calculate Permutation Importance')
+        importances = permutation_importance(clf, X_test, y_test, scoring='precision')
+        self.plot_importance(importances, column_names, modelName)
+
+
+    def plot_importance(self, importances, feature_names, modelName):
+        # Calculate the mean decrease in precision for each feature
+        mean_importances = np.mean(importances.importances, axis=1)
+        
+        # Sort the feature names based on the mean decrease in precision
+        sorted_indices = np.argsort(mean_importances)
+        sorted_feature_names = [feature_names[idx] for idx in sorted_indices]
+        sorted_importances = importances.importances[sorted_indices]
+        
+        plt.figure(figsize=(20, 8))
+        box = plt.boxplot(sorted_importances.T, vert=False, labels=sorted_feature_names, patch_artist=True)
+
+        # Customizing the colors
+        for patch, color in zip(box['boxes'], ['skyblue', 'lightgreen', 'tan', 'pink', 'lightyellow'] * 2):
+            patch.set_facecolor(color)
+
+        # Increasing label sizes
+        plt.yticks(fontsize=12)
+        plt.xticks(fontsize=12)
+
+        # Setting up the gridlines
+        plt.grid(True, linestyle='--', which='major', color='lightgrey', alpha=0.7)
+
+        # Customizing the median lines
+        for median in box['medians']:
+            median.set_color('red')
+            median.set_linewidth(2)
+
+        # Customizing the fliers (outliers)
+        for flier in box['fliers']:
+            flier.set_marker('o')
+            flier.set_color('orange')
+            flier.set_alpha(0.5)
+
+        # Adjust axis labels and title
+        plt.xlabel('Decrease in precision', fontsize=14)
+        plt.ylabel('Feature', fontsize=14)
+        plt.title(f'Feature Importance Boxplot for {modelName}', fontsize=16)
+
+        # Saving the figure with high quality
+        plt.tight_layout()
+        plt.savefig(f"permutation_importance_boxplot_{modelName}.png", dpi=300)
+
+
+    def get_param_dist(self, modelName):
         if modelName == 'RFC':
-            print('Training Random Forest Classifier')
-            clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=420)
-            clf = clf.fit(X_train, y_train)
-            y_pred = clf.predict(X_test)
-            print(y_pred)
+            return {
+                'n_estimators': [80, 100, 120],  # Around 100
+                'max_depth': [3, 4, 5],  # Around 4
+                'max_features': ['sqrt', 'log2'],  # 'sqrt' was best, but still worth checking 'log2'
+                'min_samples_split': [8, 10, 12],  # Around 10
+                'min_samples_leaf': [3, 4, 5],  # Around 4
+                'bootstrap': [True, False]  
+            }
             
         elif modelName == 'SVM':
-            clf = SVC(random_state=420)
-            clf.fit(X_train, y_train)
-            y_pred = clf.predict(X_test)
-            
-        elif (modelName == 'CoM'):
-            print("Training Center of Mass model")
-            threshold_factor=0.5 #Param do be adjusted
-            centroid = np.mean(X_test, axis=0)
-            distances = np.sqrt(np.sum((X_test - centroid)**2, axis=1))
-            threshold = threshold_factor * np.std(distances)
-            y_pred = distances > threshold
-            permutation_importance_flag = False
-            
-        elif modelName == 'CoN':
-            print("Training Center of Neighborhood model")
-            k = 5
-            threshold_factor = 1.5
-            neighbors = NearestNeighbors(n_neighbors=k + 1)  # +1 because a point is its own nearest neighbor
-            neighbors.fit(X_test)
-            distances, indices = neighbors.kneighbors(X_test)
+            return {
+                'C': [0.1, 1, 10, 100],  # Regularization parameter
+                'gamma': ['scale', 'auto', 0.1, 0.01, 0.001],  # Kernel coefficient
+                'kernel': ['rbf', 'poly', 'sigmoid'],  # Kernel type
+                'degree': [2, 3, 4]  # Degree for 'poly' kernel. Consider lower values to avoid overfitting.
+            }    
 
-            neighborhood_centroids = np.mean(X_test.iloc[indices][:, 1:, :], axis=1)  # Exclude the point itself
-            point_to_neighborhood_distances = np.linalg.norm(X_test - neighborhood_centroids, axis=1)
-            threshold = threshold_factor * np.std(point_to_neighborhood_distances)
-            y_pred = point_to_neighborhood_distances > threshold
-            permutation_importance_flag = False
-        
-        print('\n')
-        print(f"Precision: {precision_score(y_test, y_pred)}")
-        print(f"F1 Score: {f1_score(y_test, y_pred)}")
-        print(f"Recall: {recall_score(y_test, y_pred)}")
-        print('\n')
-        
-        if permutation_importance_flag:
-            print('Calculate Permutation Importance')
-            feature_importance_results = permutation_importance(clf, X_test, y_pred, scoring='accuracy')
-            importances = feature_importance_results.importances_mean
-            
-            # Plot the Permutation Importance
-            feature_names = np.array(feature_set.columns)
-            plt.figure(figsize=(20, 8))
-            plt.barh(feature_names, importances)
-            plt.xlabel('Mean decrease in accuracy')
-            plt.ylabel('Feature')
-            plt.title('Feature importance')
-            plt.savefig(f"permutation_importance_{modelName}.png")
-        
-        if plotting_flag:
-            print('Plot Prediction')
-            x_test_dataframe = pd.DataFrame(X_test)
-            x_test_dataframe['prediction'] = y_pred
-            x_test_dataframe['actual'] = y_test
-            x_test_dataframe = x_test_dataframe.reset_index(drop=True)
-            self.plot_predictions_new(x_test_dataframe, modelName)
-        
-        joblib.dump(clf, f"resources/models/anomaly_detector_{modelName}.joblib")
-    
-    'Detection Methods'
     def detect_secret(self, newsfeed: list[str]) -> bool:
-        return self.detect_secret_in_article(newsfeed)
-    
-    def detect_secret_in_article(self, newsfeed: list[str]) -> bool:
-        articles = [clean(article) for article in newsfeed]
-        features = self.extract_features_in_articles(articles)
-        clf = joblib.load('resources/models/anomaly_detector_articles.joblib')
-        predictions = clf.predict(features)
-        counts = Counter(predictions)
-        #print('Predictions:', predictions)
+        # Extract features from the newsfeed
+        features = self.extract_features_in_newsfeed(newsfeed)
 
-        if counts[-1] >= 1:
-            return True #-1
-        else:
-            return False #1
-    
-    def detect_secret_in_newsfeed(self, newsfeed: list[str]) -> bool:
-        newsfeed_cleaned = [clean(article) for article in newsfeed]
-        features = self.extract_features_in_newsfeed(newsfeed_cleaned)
-        prediction = features.apply(lambda row: 1 if (row == 1).sum() > (row == -1).sum() else -1, axis=1)
-        
-        #clf = joblib.load('resources/models/anomaly_detector_newsfeeds.joblib')
-        #prediction = clf.predict(features)
-        #print('Prediction:', prediction)
-        return True if prediction == -1 else False
+        # Scale and select features
+        scaler = joblib.load('resources/models/scaler.joblib')
+        selector = joblib.load('resources/models/selector.joblib')
+        features_scaled = scaler.transform(features)
+        features_selected = selector.transform(features_scaled)
 
-    'Plotting Methods'
-    def plot_predictions(self, df, modelname='RFC'):
-        predictions = df.prediction
-        features = df.drop(columns=['prediction'])
+        # Load the pretrained classifier and predict if a secret is present
+        clf = joblib.load('resources/models/anomaly_detector_SVM.joblib')
+        prediction = clf.predict(features_selected)
         
-        principle_components = self.apply_PCA(df)
-        df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
-        df_pca['prediction'] = predictions
-        df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
-        
-        plt.savefig(f"predictions_{modelname}.png")
-        
-        outliers = df_pca[df_pca['prediction'] == -1]
-        outlier_data = outliers[['x', 'y']]
-        print(f"Number of Outliers: {len(outlier_data)}")
-
-        outlier_data.to_csv(f"outliers_{modelname}.csv", index=False)
-        
-    def plot_predictions_new(self, x_test_dataframe, modelName):
-        
-        principle_components = self.apply_PCA(x_test_dataframe.drop(columns=['prediction', 'actual']))
-        df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
-        df_pca['prediction'] = x_test_dataframe['prediction']
-        df_pca['actual'] = x_test_dataframe['actual']
-        df_pca['false_positive'] = (x_test_dataframe['prediction'] == 1) & (x_test_dataframe['actual'] == -1)
-        df_pca['false_negative'] = (x_test_dataframe['prediction'] == -1) & (x_test_dataframe['actual'] == 1)
-        
-        plt.figure(figsize=(10, 6))
-        
-        for index, row in df_pca.iterrows():
-            if row['false_positive'] or row['false_negative']:
-                color = 'red'  # False positives and negatives in red
-            else:
-                color = 'blue' # Correct predictions in blue
-            plt.scatter(row['y'], row['x'], color=color)
-
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.title(f'Prediction Plot for {modelName}')
-        plt.savefig(f"prediction_plot_{modelName}.png")
-        
-    def apply_PCA(self, df, n_components=2):
-            pca = PCA(n_components=n_components)
-            pca.fit(df)
-            return pca.transform(df)
+        # Return True if the model predicts the presence of a secret, False otherwise
+        return bool(prediction[0] == -1)

@@ -2,6 +2,7 @@ import string
 import numpy as np
 
 def clean(text):
+    text = str(text)
     text = text.replace("\n", " ")
     text = text.replace("\t", " ")
     text = text.replace("\r", " ")

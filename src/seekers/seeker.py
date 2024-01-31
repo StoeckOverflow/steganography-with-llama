@@ -2,11 +2,13 @@ from abc import ABC, abstractmethod
 from llama_cpp import Llama
 import sys
 import json
+from transformers import BertTokenizer, BertForMaskedLM
 
 class Seeker(ABC):
     
     def __init__(self, disable_tqdm) -> None:
         self.model_path = 'llama-2-7b.Q5_K_M.gguf'
+        """
         self.base_model = Llama(
             model_path=self.model_path,
             verbose=False,        
@@ -17,6 +19,9 @@ class Seeker(ABC):
             n_threads_batch=3,    # similar to n_threads, but for batch processing (parallel execution of different llama operations)
             use_mlock=True,        # Use mlock to prevent paging the model to disk (depends on your system's memory)
         )
+        """
+        self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+        self.bert_model = BertForMaskedLM.from_pretrained('bert-base-cased').eval()
         self.disable_tqdm = disable_tqdm
     
     @abstractmethod
