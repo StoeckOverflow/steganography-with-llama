@@ -1,24 +1,22 @@
 from transformers import BertTokenizer, BertModel
-from torch import nn
+import torch.nn as nn
 import torch
 
 class SemanticFeatureExtractor(nn.Module):
-    
-    def __init__(self, output_size, disable_tqdm=False):
+    def __init__(self, output_size, bert_model_name='bert-base-cased'):
         super(SemanticFeatureExtractor, self).__init__()
-        self.disable_tqdm=False
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        self.bert_model = BertModel.from_pretrained('bert-base-uncased')
+        self.bert_model = BertModel.from_pretrained(bert_model_name)
+        self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
         self.dense = nn.Linear(self.bert_model.config.hidden_size, output_size)
-        self.activation = nn.Sigmoid()
-        
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, newsfeed):
-        inputs = self.tokenizer(newsfeed, return_tensors='pt', padding=True, truncation=True, max_length=1024)
-        with torch.no_grad():
-            outputs = self.bert_model(**inputs)
-            hidden_states = outputs.last_hidden_state
-        pooled_output = torch.mean(hidden_states, 1)
-        dense_output = self.dense(pooled_output)
-        activated_output = self.activation(dense_output)
-        
-        return activated_output
+        inputs = self.bert_tokenizer(newsfeed, padding=True, truncation=True, return_tensors="pt")
+        input_ids = inputs['input_ids']
+        attention_mask = inputs['attention_mask']
+        outputs = self.bert_model(input_ids=input_ids, attention_mask=attention_mask)
+        cls_representation = outputs.last_hidden_state[:, 0, :]
+        dense_output = self.dense(cls_representation)
+        confidence_scores = self.sigmoid(dense_output)
+
+        return confidence_scores
