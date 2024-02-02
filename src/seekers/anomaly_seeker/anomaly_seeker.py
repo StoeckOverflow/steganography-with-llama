@@ -6,7 +6,6 @@ import joblib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from collections import Counter
 from textblob import TextBlob
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -17,12 +16,11 @@ from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_
 from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
 from sklearn.inspection import permutation_importance
-from sklearn.decomposition import PCA
 
 from .features import *
 from ..seeker import Seeker
 from ...utils.string_modification import clean
-from ...utils.llama_utils import get_probabilities, get_entropy, get_perplexity
+from ...utils.llama_utils import get_entropy, get_perplexity
 from ...utils.bert_utils import get_bert_next_token_probability_and_logits
 
 class Anomaly_Seeker(Seeker):
@@ -30,6 +28,7 @@ class Anomaly_Seeker(Seeker):
     def __init__(self, disable_tqdm=False) -> None:
         super().__init__(disable_tqdm)
         self.base_model = self.bert_model # Use BERT as base model instead of LLAMA
+        self.scoring = 'f1' # Optimize for F1-score
         self.random_state = 420
 
     def extract_features_in_newsfeed(self, newsfeed):
@@ -114,7 +113,7 @@ class Anomaly_Seeker(Seeker):
         # Set up Stratified Cross Validation
         stratified_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
 
-        random_search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=100, cv=stratified_cv, verbose=2, random_state=self.random_state, n_jobs=-1, scoring='precision')
+        random_search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=100, cv=stratified_cv, verbose=2, random_state=self.random_state, n_jobs=-1, scoring=self.scoring)
         random_search.fit(X_train, y_train)
         print("Best parameters found: ", random_search.best_params_)
         clf = random_search.best_estimator_
@@ -128,6 +127,7 @@ class Anomaly_Seeker(Seeker):
         print(f"Precision: {precision_score(y_test, y_pred)}")
         print(f"Recall: {recall_score(y_test, y_pred)}")
         print(f"F1-score: {f1_score(y_test, y_pred)}")
+        print(f"Accuracy: {np.mean(y_test == y_pred)}")
 
 
     def load_or_extract_features(self, features_file, feeds_directory):
@@ -144,7 +144,7 @@ class Anomaly_Seeker(Seeker):
 
     def train_model(self, modelName='SVM'):
         print('Preparation...')
-        feature_set, labels = self.load_or_extract_features('resources/features/feature_set_newsfeeds.csv', 'resources/feeds/kaggle')
+        feature_set, labels = self.load_or_extract_features('resources/feature_set_newsfeeds.csv', 'resources/feeds/kaggle')
 
         # Initial Training
         clf, X_test, y_test, column_names = self.perform_training(feature_set, labels, modelName)
@@ -186,16 +186,16 @@ class Anomaly_Seeker(Seeker):
     
 
     def calculate_and_plot_permutation_importance(self, clf, X_test, y_test, column_names, modelName):
-        print('Calculate Permutation Importance')
-        importances = permutation_importance(clf, X_test, y_test, scoring='precision')
+        importances = permutation_importance(clf, X_test, y_test, scoring=self.scoring)
         self.plot_importance(importances, column_names, modelName)
+        print('Permutation Importance Plot saved to file.')
 
 
     def plot_importance(self, importances, feature_names, modelName):
-        # Calculate the mean decrease in precision for each feature
+        # Calculate the mean decrease for each feature
         mean_importances = np.mean(importances.importances, axis=1)
         
-        # Sort the feature names based on the mean decrease in precision
+        # Sort the feature names based on the mean decrease
         sorted_indices = np.argsort(mean_importances)
         sorted_feature_names = [feature_names[idx] for idx in sorted_indices]
         sorted_importances = importances.importances[sorted_indices]
@@ -226,7 +226,7 @@ class Anomaly_Seeker(Seeker):
             flier.set_alpha(0.5)
 
         # Adjust axis labels and title
-        plt.xlabel('Decrease in precision', fontsize=14)
+        plt.xlabel(f'Decrease in {self.scoring} score', fontsize=14)
         plt.ylabel('Feature', fontsize=14)
         plt.title(f'Feature Importance Boxplot for {modelName}', fontsize=16)
 
