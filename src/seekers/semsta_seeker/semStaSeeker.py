@@ -1,7 +1,7 @@
 from ..seeker import Seeker
 import torch
 from .fusionComponent import FusionComponent
-from .classifier import Classifier
+from .classifier import Classifier, Classifier_Trainer
 from .semanticFeatureExtractor import SemanticFeatureExtractor
 from .statisticalFeatureExtractor import StatisticalFeatureExtractor
 from sklearn.model_selection import train_test_split
@@ -12,16 +12,17 @@ import os
 
 class SemStaSeeker(Seeker):
     
-    def __init__(self, alpha=0.25, semantic_dim=128, statistical_dim=128, num_classes=2, output_size=128, disable_tqdm=False):
+    def __init__(self, alpha=0.25, semantic_dim=1024, statistical_dim=1024, num_classes=2, output_size=1024, disable_tqdm=False):
         self.fusion_component = FusionComponent(semantic_dim, statistical_dim, alpha)
-        self.semantic_feature_extractor = SemanticFeatureExtractor(output_size)
-        self.statistical_feature_extractor = StatisticalFeatureExtractor(hidden_dim=statistical_dim, disable_tqdm=disable_tqdm)
+        self.semantic_feature_extractor = SemanticFeatureExtractor(output_size=output_size)
+        self.statistical_feature_extractor = StatisticalFeatureExtractor(hidden_dim=statistical_dim, output_dim=output_size, disable_tqdm=disable_tqdm)
         self.classifier = Classifier(statistical_dim, semantic_dim, num_classes)
+        self.classifier_trainer = Classifier_Trainer(self.classifier)
         self.disable_tqdm = disable_tqdm
 
     def train_test_split(self, newsfeeds, labels, test_size=0.3):
-        return train_test_split(newsfeeds, labels, test_size=test_size, train_size=1 - test_size, random_state=42)
-
+        return train_test_split(newsfeeds, labels, test_size=test_size, train_size=1 - test_size, random_state=42, stratify=labels)
+        
     def load_data_from_dir(self, newsfeeds_dir):
         all_newsfeeds = []
         all_labels = []
@@ -58,23 +59,32 @@ class SemStaSeeker(Seeker):
             test_data = json.load(json_file)
         test_newsfeeds = test_data['newsfeeds']
         test_labels = test_data['labels']
-        
+                
         print('Training AutoEncoder...')
         self.statistical_feature_extractor.train_autoencoder(train_newsfeeds)
         print('AutoEncoder trained')
-        
+
         print('Evaluate Fused Features of train feeds')
         train_fused_features_tensor = torch.load('resources/models/train_fused_features.pth')
+        train_original_encoder_features_tensor = torch.load('resources/models/train_original_encoder_features.pth')
         print('Fused Features of train feeds evaluated')
-        
+
         print('Evaluate Fused Features of test feeds')
         test_fused_features_tensor = torch.load('resources/models/test_fused_features.pth')
+        test_original_encoder_features_tensor = torch.load('resources/models/test_original_encoder_features.pth')
         print('Fused Features of test feeds evaluated')
-        
+
         print('Training Classifier...')
-        self.classifier.train_classifier(train_fused_features_tensor, train_labels)
+        self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
         print('Classifier trained')
-        self.classifier.evaluate_classifier(test_fused_features_tensor, test_labels)
+        print('Evaluate Classifier')
+        self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
+        
+        print('Evaluate Classifier on Stemo Newsfeeds')
+        all_newsfeeds_stemo, all_labels_stemo = self.load_data_from_dir('resources/feeds/doctored_feeds_newsfeeds')
+        stemo_newsfeeds_fused_features_tensor, stemo_newsfeeds_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(all_newsfeeds_stemo)
+        self.classifier_trainer.evaluate_classifier(stemo_newsfeeds_original_encoder_features_tensor, stemo_newsfeeds_fused_features_tensor, all_labels_stemo)
+        
 
     def train_and_evaluate_model(self, newsfeeds_dir, save_dir='resources/models'):
         all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir)
@@ -109,9 +119,9 @@ class SemStaSeeker(Seeker):
             json.dump({'newsfeeds': test_newsfeeds, 'labels': test_labels}, f)
 
         print('Training Classifier...')
-        self.classifier.train_classifier(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
+        self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
         print('Classifier trained')
-        self.classifier.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
+        self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
 
     def detect_secret(self, newsfeed: list[str]) -> bool:
         self.classifier.eval()
