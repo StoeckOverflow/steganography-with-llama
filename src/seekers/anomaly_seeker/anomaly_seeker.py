@@ -8,13 +8,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from textblob import TextBlob
 from tqdm import tqdm
+from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
+from sklearn.svm import SVC, OneClassSVM
 from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_classif
-from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV, StratifiedKFold
-from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV, StratifiedKFold, ParameterGrid
+from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix, roc_curve, auc
 from sklearn.inspection import permutation_importance
 
 from .features import *
@@ -109,6 +110,30 @@ class Anomaly_Seeker(Seeker):
             clf = RandomForestClassifier(random_state=self.random_state)
         elif model_name == 'SVM':
             clf = SVC(random_state=self.random_state)
+        elif model_name == 'OCSVM':
+            # Split validation set from training set
+            X_train, X_validation, y_train, y_validation = train_test_split(X_train, y_train, test_size=0.2, random_state=self.random_state, stratify=y_train)
+            # Only use the normal data for training
+            indices = np.where(y_train == 1)[0] 
+            X_train = X_train[indices]
+            
+            best_params = self.manual_gridsearch(X_train, X_validation, y_validation, param_dist)
+            clf = OneClassSVM(**best_params)
+            clf.fit(X_train)
+            y_pred = clf.predict(X_test)
+
+            # Plot ROC curve and find optimal threshold
+            optimal_threshold = self.plot_roc_curve(clf, X_test, y_test, model_name)
+            print(f"{optimal_threshold=}")
+            # Apply the optimal threshold to the decision function scores
+            decision_scores = clf.decision_function(X_test)
+            decision_scores = clf.decision_function(X_test)
+            y_pred_optimal = np.where(decision_scores < optimal_threshold, -1, 1) # -1 for anomalies, 1 for normal data
+            print(np.unique(y_pred_optimal, return_counts=True))
+            # Print metrics
+            self.print_metrics(y_test, y_pred_optimal)
+
+            return clf, optimal_threshold
 
         # Set up Stratified Cross Validation
         stratified_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
@@ -123,10 +148,25 @@ class Anomaly_Seeker(Seeker):
         return clf
     
 
+    def manual_gridsearch(self, X_train, X_validation, y_validation, param_dist):
+        best_params = None
+        best_score = -np.inf
+        for params in ParameterGrid(param_dist):
+            clf = OneClassSVM(**params)
+            clf.fit(X_train)
+            y_pred = clf.predict(X_validation)
+            score = f1_score(y_validation, y_pred, pos_label=-1)
+            if score > best_score:
+                best_score = score
+                best_params = params
+        print("Best parameters found: ", best_params)
+        return best_params
+    
+
     def print_metrics(self, y_test, y_pred):
-        print(f"Precision: {precision_score(y_test, y_pred)}")
-        print(f"Recall: {recall_score(y_test, y_pred)}")
-        print(f"F1-score: {f1_score(y_test, y_pred)}")
+        print(f"Precision: {precision_score(y_test, y_pred, pos_label=-1)}")
+        print(f"Recall: {recall_score(y_test, y_pred, pos_label=-1)}")
+        print(f"F1-score: {f1_score(y_test, y_pred, pos_label=-1)}")
         print(f"Accuracy: {np.mean(y_test == y_pred)}")
 
 
@@ -147,32 +187,34 @@ class Anomaly_Seeker(Seeker):
         feature_set, labels = self.load_or_extract_features('resources/feature_set_newsfeeds.csv', 'resources/feeds/kaggle')
 
         # Initial Training
-        clf, X_test, y_test, column_names = self.perform_training(feature_set, labels, modelName)
+        clf, best_threshold, X_test, y_test, column_names = self.perform_training(feature_set, labels, modelName)
 
         self.calculate_and_plot_permutation_importance(clf, X_test, y_test, column_names, modelName)
 
         # Save the final model
         joblib.dump(clf, f"resources/models/anomaly_detector_{modelName}.joblib")
+        joblib.dump(best_threshold, f"resources/models/best_threshold_{modelName}.joblib")
 
 
     def perform_training(self, feature_set, labels, modelName):
         X_train, X_test, y_train, y_test, column_names = self.prepare_data(feature_set, labels)
-        clf = self.train_and_evaluate(X_train, y_train, X_test, y_test, modelName, self.get_param_dist(modelName))
-        return clf, X_test, y_test, column_names
+        clf, best_threshold = self.train_and_evaluate(X_train, y_train, X_test, y_test, modelName, self.get_param_dist(modelName))
+        return clf, best_threshold, X_test, y_test, column_names
     
 
     def prepare_data(self, feature_set, labels):
         feature_set = feature_set.fillna(0.0)
 
         X_train, X_test, y_train, y_test = train_test_split(feature_set, labels, test_size=0.2, random_state=self.random_state, stratify=labels)
+        X_train, X_test, y_train, y_test = np.array(X_train), np.array(X_test), np.array(y_train), np.array(y_test)
 
         # Using StandardScaler
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-        # Selecting features using ANOVA F-value
-        selector = SelectKBest(f_classif, k=25)
+        # Selecting top features using anova f-test
+        selector = SelectKBest(f_classif, k=3)
         X_train = selector.fit_transform(X_train, y_train)
         X_test = selector.transform(X_test)
 
@@ -234,6 +276,30 @@ class Anomaly_Seeker(Seeker):
         plt.tight_layout()
         plt.savefig(f"permutation_importance_boxplot_{modelName}.png", dpi=300)
 
+    
+    def plot_roc_curve(self, clf, X_test, y_test, modelName):
+        decision_scores = clf.decision_function(X_test)
+        #y_test = np.where(y_test == 1, 0, 1) # Convert labels to 0 and 1 as required by roc_curve
+        fpr, tpr, thresholds = roc_curve(y_test, decision_scores)
+        roc_auc = auc(fpr, tpr)
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.grid(True, linestyle='--', which='major', color='lightgrey', alpha=0.7)
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        plt.savefig(f'roc_curve_{modelName}.png', dpi=300)
+
+        # Find the optimal threshold
+        optimal_idx = np.argmax(tpr - fpr)
+        optimal_threshold = thresholds[optimal_idx]
+        
+        return optimal_threshold
+
 
     def get_param_dist(self, modelName):
         if modelName == 'RFC':
@@ -253,6 +319,15 @@ class Anomaly_Seeker(Seeker):
                 'kernel': ['rbf', 'poly', 'sigmoid'],  # Kernel type
                 'degree': [2, 3, 4]  # Degree for 'poly' kernel. Consider lower values to avoid overfitting.
             }    
+        
+        elif modelName == 'OCSVM':
+            return {
+                'nu': [0.01, 0.05, 0.1], 
+                'gamma': ['scale', 'auto', 0.1, 0.01]
+            }
+        
+        else:
+            raise ValueError(f"Model name {modelName} not recognized.")
 
     def detect_secret(self, newsfeed: list[str]) -> bool:
         # Extract features from the newsfeed
@@ -266,7 +341,13 @@ class Anomaly_Seeker(Seeker):
 
         # Load the pretrained classifier and predict if a secret is present
         clf = joblib.load('resources/models/anomaly_detector_SVM.joblib')
-        prediction = clf.predict(features_selected)
+        threshold = joblib.load('resources/models/best_threshold_SVM.joblib')
+        
+        # Use the decision function to get the score
+        decision_score = clf.decision_function(features_selected)
+
+        # Apply the threshold to the decision score to determine the prediction
+        prediction = (decision_score < threshold).astype(int) # Returns 1 for anomalies and 0 for normal data
         
         # Return True if the model predicts the presence of a secret, False otherwise
-        return bool(prediction[0] == -1)
+        return bool(prediction)
