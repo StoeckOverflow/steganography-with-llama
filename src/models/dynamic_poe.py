@@ -13,13 +13,13 @@ class DynamicPOE:
     """
     Combines a Dynamic Arithmetic Encoding Codec with it's hider.
     """
-    def __init__(self, bits_per_token: int = 3, skip_tokens: int = 0, vocabulary: Iterable = None, path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True, n_gpu_layers: int = 0):
+    def __init__(self, bits_per_token: int = 3, skip_tokens: int = 0, skip_feeds: int = 0, vocabulary: Iterable = None, path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True, n_gpu_layers: int = 0):
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
             self.vocabulary = vocabulary
         llm = Llama(model_path=path_to_llm, n_ctx=512, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False, n_gpu_layers=n_gpu_layers)
         self.codec = DynamicArithmeticEncoding(frequency_table={char: 1 for char in vocabulary})
-        self.hider = ArithmeticProbOrdHider(llm, bits_per_token=bits_per_token, skip_tokens=skip_tokens, disable_tqdm=disable_tqdm)
+        self.hider = ArithmeticProbOrdHider(llm, bits_per_token=bits_per_token, skip_tokens=skip_tokens, skip_feeds=skip_feeds, disable_tqdm=disable_tqdm)
     
     @staticmethod
     def get_default_vocabulary() -> Iterable:
@@ -58,7 +58,6 @@ class DynamicPOE:
         bits_per_decimal = self.get_highest_compression(message) if try_extra_compression else np.pi
         encoded_msg = self.codec.encode(message, bits_per_decimal)
         encoded_binary_messages = Dec2BinConverter.get_bin_from_decimal(encoded_msg, bits_per_token=self.hider.bits_per_token)
-        print(encoded_binary_messages)
         if labeled_for_training_flag:
             doctored_news_feed, length_rest = self.hider.hide_in_whole_newsfeed(
                 news_feed,

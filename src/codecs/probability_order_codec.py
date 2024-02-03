@@ -1,7 +1,7 @@
 import json
 import tqdm
 from typing import Iterable, List, Tuple
-from ..utils import split_in_separators, initialize_token_getter, uniquify, decode_secret
+from ..utils import split_in_separators, initialize_token_getter, decode_secret
 from .codec import Codec
 from llama_cpp import Llama
 
@@ -54,8 +54,8 @@ class ProbabilityOrderCodec(Codec):
             # Add a token that's outside of the scope of the coding to signal that the whole message has been encoded
             doctored_newsfeed += self.get_valid_token(doctored_newsfeed, bits_per_token=bits_per_token+1)[(2**bits_per_token)+1] 
 
-        with open(f"{uniquify('resources/backlog/encoding_history')}.json", "w") as f:
-            f.write(json.dumps(log, indent=2))
+        # with open(f"{uniquify('resources/backlog/encoding_history')}.json", "w") as f:
+        #     f.write(json.dumps(log, indent=2))
 
         return doctored_newsfeed, return_bits
     

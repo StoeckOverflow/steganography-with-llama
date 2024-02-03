@@ -14,7 +14,7 @@ __all__ = [
 
 class ArithmeticProbOrdHider:
     
-    def __init__(self, llm: Llama, bits_per_token: int = 3, skip_tokens: int = 0, disable_tqdm: bool = True):
+    def __init__(self, llm: Llama, bits_per_token: int = 3, skip_tokens: int = 0, skip_feeds: int = 0, disable_tqdm: bool = True):
         self.llm = llm
         # weird_tokens = ["\n", " \n", "..", "...", "…", " …", "…", "(", ")", "()", "[", "]", "[]", "g…"]  # The last one is a different kind of ... Lol
         weird_tokens = []
@@ -24,6 +24,7 @@ class ArithmeticProbOrdHider:
         self.repeat_penalty = 1.5
         self.disable_tqdm = disable_tqdm
         self.bits_per_token = bits_per_token
+        self.skip_feeds = skip_feeds
         self.replace_from_unicode = {
             "\u2013": "-",  # Weird length middle line
             "\u2014": "-",  # Weird length middle line
@@ -177,7 +178,6 @@ class ArithmeticProbOrdHider:
         return doctored_article, []
     
     def check_utf8(self, article: str) -> Dict:
-
         raise NotImplementedError
 
     def enforce_utf8_usage(self, article: str, utf8_usage: Dict) -> str:
@@ -199,6 +199,7 @@ class ArithmeticProbOrdHider:
         
         doctored_newsfeed = []
         remaining_secrets = binary_secrets
+        news_feed = news_feed[::self.skip_feeds+1]
         for news_article in tqdm.tqdm(news_feed, "Hidding messages is article nr: ", disable=self.disable_tqdm):
             # article_utf8_usage = self.check_utf8(news_article)
             prompt = " ".join(self.split_in_separators(news_article)[:nr_prompt_words])
@@ -296,6 +297,7 @@ class ArithmeticProbOrdHider:
     def retrieve_multiple_secrets_from_news_feed(self, news_feed: List[str], nr_prompt_words: int = 5) -> List[str]:
         decoded_secrets = []
         fully_decoded_flags = []
+        news_feed = news_feed[::self.skip_feeds+1]
         for news_article in tqdm.tqdm(news_feed, "Retrieving secret from article nr: ", disable=self.disable_tqdm):
             decoded_msgs, completely_decoded_flags = self.retrieve_multiple_secrets_from_single_article(news_article, nr_prompt_words)
             decoded_secrets.extend(decoded_msgs)

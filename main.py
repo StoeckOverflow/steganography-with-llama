@@ -26,6 +26,6 @@ if __name__ == "__main__":
      #synonym_hider = SynonymHider(disable_tqdm=False)
      #synonym_hider.hide_secret(feed_array, feed_secret, output='stdout')
      
-     dpoe = DynamicPOE(disable_tqdm=True)
+     dpoe = DynamicPOE(disable_tqdm=True, bits_per_token=2, skip_tokens=20, n_gpu_layers=-1)
      dpoe.hide_interface()
      # dpoe.recover_interface()
