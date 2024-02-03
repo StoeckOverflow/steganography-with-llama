@@ -68,7 +68,7 @@ class ArithmeticProbOrdHider:
             if skip_tokens == 0:
                 return feed + next_token
             updated_feed = feed + next_token
-            tokenized_prompt = llm.tokenize(bytes(updated_feed, "utf-8"))
+            tokenized_prompt = llm.tokenize(updated_feed.encode(), add_bos=False)
             logits_processor.update_prompt_length(tokenized_prompt)
             # start = time.time()
             feed_padding = llm(tokenized_prompt[-llm.n_ctx()+1:], top_p=0, max_tokens=skip_tokens, logprobs=1, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]["text"]
@@ -84,7 +84,7 @@ class ArithmeticProbOrdHider:
         logits_processor = WhitelistAndLength(whitelist_inds=self.token_whitelist, min_completion_length=1, eos_token_id=self.forbidden_tokens)
         def _get_valid_token(prompt: str, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> List[str]:
             nr_tokens_to_generate = 2**(bits_per_token + recursive_extra_tokens)
-            tokenized_prompt = llm.tokenize(bytes(prompt, "utf-8"))
+            tokenized_prompt = llm.tokenize(prompt.encode(), add_bos=False)
             logits_processor.update_prompt_length(tokenized_prompt)
             # start = time.time()
             output = llm(tokenized_prompt[-llm.n_ctx()+1:], top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]

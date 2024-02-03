@@ -51,7 +51,7 @@ class DynamicPOE:
             ) -> Dict[str, List[str]]:
         avg_char_len_per_article = sum([len(article) for article in news_feed])/len(news_feed)
         if avg_char_len_per_article > 700:
-            soft_max_chars_lim = 480
+            soft_max_chars_lim = 490
             chars_or_words_lim = "Words"
         else:
             chars_or_words_lim = "Chars"

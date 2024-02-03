@@ -149,7 +149,7 @@ class WhitelistAndLength(LogitsProcessorList):
         self._extend_completion = ExtendCompletionLength(min_completion_length, detokenizer, eos_token_id)
         self.append(WhitelistedTokens(total_tokens, whitelist_inds))
         self.append(self._extend_completion)
-        self.append(TypicalLogitsWarper())
+        # self.append(TypicalLogitsWarper())
 
     def update_prompt_length(self, *args, **kwargs):
         self._extend_completion.update_prompt_length(*args, **kwargs)
