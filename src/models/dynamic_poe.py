@@ -1,4 +1,4 @@
-from typing import Union, List, Dict
+from typing import Literal, Union, List, Dict
 from collections.abc import Iterable
 import sys
 import numpy as np
@@ -17,7 +17,7 @@ class DynamicPOE:
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
             self.vocabulary = vocabulary
-        llm = Llama(model_path=path_to_llm, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False, n_gpu_layers=n_gpu_layers)
+        llm = Llama(model_path=path_to_llm, n_ctx=512, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False, n_gpu_layers=n_gpu_layers)
         self.codec = DynamicArithmeticEncoding(frequency_table={char: 1 for char in vocabulary})
         self.hider = ArithmeticProbOrdHider(llm, bits_per_token=bits_per_token, skip_tokens=skip_tokens, disable_tqdm=disable_tqdm)
     
@@ -39,15 +39,45 @@ class DynamicPOE:
             else:
                 return x+i-i_step
 
-    def hide(self, message: str, news_feed: list[str], try_extra_compression: bool = True, labeled_for_training_flag=False) -> dict[str, list[str]]:
+    def hide(
+            self,
+            message: str,
+            news_feed: List[str],
+            try_extra_compression: bool = True,
+            nr_prompt_words: int = 5,
+            labeled_for_training_flag=False,
+            soft_max_chars_lim: int = 450,
+            chars_or_words_lim: Literal["Chars", "Words"] = "Chars",
+            ) -> Dict[str, List[str]]:
+        avg_char_len_per_article = sum([len(article) for article in news_feed])/len(news_feed)
+        if avg_char_len_per_article > 700:
+            soft_max_chars_lim = 480
+            chars_or_words_lim = "Words"
+        else:
+            chars_or_words_lim = "Chars"
         bits_per_decimal = self.get_highest_compression(message) if try_extra_compression else np.pi
         encoded_msg = self.codec.encode(message, bits_per_decimal)
         encoded_binary_messages = Dec2BinConverter.get_bin_from_decimal(encoded_msg, bits_per_token=self.hider.bits_per_token)
+        print(encoded_binary_messages)
         if labeled_for_training_flag:
-            doctored_news_feed, length_rest = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages, labeled_for_training_flag=labeled_for_training_flag)
+            doctored_news_feed, length_rest = self.hider.hide_in_whole_newsfeed(
+                news_feed,
+                encoded_binary_messages,
+                nr_prompt_words=nr_prompt_words,
+                labeled_for_training_flag=labeled_for_training_flag,
+                soft_max_chars_lim=soft_max_chars_lim,
+                chars_or_words_lim=chars_or_words_lim,
+                )
             return doctored_news_feed, length_rest
         else:
-            doctored_news_feed = self.hider.hide_in_whole_newsfeed(news_feed, encoded_binary_messages)
+            doctored_news_feed = self.hider.hide_in_whole_newsfeed(
+                news_feed,
+                encoded_binary_messages,
+                nr_prompt_words=nr_prompt_words,
+                labeled_for_training_flag=False,
+                soft_max_chars_lim=soft_max_chars_lim,
+                chars_or_words_lim=chars_or_words_lim,
+                )
             return doctored_news_feed
     
     def recover(self, doctored_news_feed: List[str], vocabulary: Iterable = None, nr_prompt_words: int = 5) -> Dict[str, str]:
@@ -59,13 +89,13 @@ class DynamicPOE:
         return {"secret": decoded_msg}
     
     def hide_interface(self) -> None:
-        json_file: Dict[str, list[str]] = json.load(sys.stdin)
+        json_file: Dict[str, List[str]] = json.load(sys.stdin)
         message, news_feed = json_file["secret"], json_file["feed"]
         doctored_news_feed = self.hide(message, news_feed)
         json.dump(doctored_news_feed, sys.stdout)
 
     def recover_interface(self) -> None:
-        json_file: Dict[str, list[str]] = json.load(sys.stdin)
+        json_file: Dict[str, List[str]] = json.load(sys.stdin)
         doctored_news_feed = json_file["feed"]
         recovered_message = self.recover(doctored_news_feed)
         json.dump(recovered_message, sys.stdout)

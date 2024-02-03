@@ -1,10 +1,12 @@
 import copy
 import time
-from typing import Union, Callable, List, Tuple, Dict
+import tokenize
+from typing import Literal, Union, Callable, List, Tuple, Dict
 import tqdm
 from llama_cpp import Llama
+import numpy as np
 
-from src.utils import ExtendCompletionLength
+from src.utils import ExtendCompletionLength, CustomLogitsProcessor, WhitelistAndLength
 
 __all__ = [
     "ArithmeticProbOrdHider",
@@ -14,14 +16,41 @@ class ArithmeticProbOrdHider:
     
     def __init__(self, llm: Llama, bits_per_token: int = 3, skip_tokens: int = 0, disable_tqdm: bool = True):
         self.llm = llm
-        self.forbidden_tokens = [llm.tokenize(bytes(token, encoding="utf-8"))[-1] for token in ["\n", "...", "…"]]
+        # weird_tokens = ["\n", " \n", "..", "...", "…", " …", "…", "(", ")", "()", "[", "]", "[]", "g…"]  # The last one is a different kind of ... Lol
+        weird_tokens = []
+        self.forbidden_tokens = [llm.tokenize(bytes(token, encoding="utf-8"))[-1] for token in weird_tokens]
         self.forbidden_tokens += [llm.token_eos(), llm.token_bos()]
         self.end_of_sequence_tokens = [".", "!", "?", "\n"]
         self.repeat_penalty = 1.5
-        self.get_valid_tokens = self.initialize_token_getter(self.llm, bits_per_token)
-        self.update_feed = self.initialize_feed_updater(self.llm, skip_tokens)
         self.disable_tqdm = disable_tqdm
         self.bits_per_token = bits_per_token
+        self.replace_from_unicode = {
+            "\u2013": "-",  # Weird length middle line
+            "\u2014": "-",  # Weird length middle line
+            "\u2018": "'",  # Opening single quote
+            "\u2019": "'",  # Closing single quote (and apostrophe)
+            "\u201c": '"',  # Opening double quotes
+            "\u201d": '"',  # Closing double quotes
+            "\u2022": "*",  # Bullet point
+            "\u2026": ",",  # Horizontal ellipsis
+        }
+        self.replace_to_unicode = {
+            "-": ["\u2013", "\u2014", "-"],  # Just randomly choose I guess - [392, 78, 1961]
+            "'": ["\u2018", "\u2019"],  # Always replace, care for order - [31, 1948]
+            '"': ["\u201c", "\u201d"],  # Always replace, care for order - [1198, 1147]
+            "*": ["\u2022", "*"],  # When talking, might be used to censor - [8, 6]
+            ",": [",", "\u2026"],  # When talking, might be used as pause - [6851, 19]
+        }
+        self.to_unicode_freq = {
+            "-": [392, 78, 1961],  # This one is just random
+            "'": [31, 1948],  # Always replace for second, unless it's at the beginning of a word.
+            '"': [1198, 1147],  # First one to first one, next one to next one. Rinse and repeat.
+            "*": [8, 6],  # When talking stay asterisc. Else go bullet.
+            ",": [6851, 19],  # When talking low chance of becoming ellipsis.
+        }
+        self.token_whitelist = np.load("resources/token_whitelist.npy")
+        self.get_valid_tokens = self.initialize_token_getter(self.llm, bits_per_token)
+        self.update_feed = self.initialize_feed_updater(self.llm, skip_tokens)
 
     @staticmethod
     def _token_is_usable(token: str, other_tokens: List[str]) -> bool:
@@ -33,15 +62,17 @@ class ArithmeticProbOrdHider:
         return True
 
     def initialize_feed_updater(self, llm: Llama, skip_tokens: int = 0) -> Callable:
-        logits_processor = ExtendCompletionLength(min_completion_length=skip_tokens, eos_token_id=self.forbidden_tokens)
+        logits_processor = WhitelistAndLength(whitelist_inds=self.token_whitelist, min_completion_length=skip_tokens, eos_token_id=self.forbidden_tokens)
         def _update_feed(feed: str, next_token: str, return_padding: bool = False) -> str:
             if skip_tokens == 0:
                 return feed + next_token
             updated_feed = feed + next_token
-            logits_processor.update_prompt_length(llm.tokenize(bytes(updated_feed, "utf-8")))
-            start = time.time()
-            feed_padding = llm(updated_feed, top_p=0, max_tokens=skip_tokens, logprobs=1, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]["text"]
-            print(f"UPDATE: Time to generate {skip_tokens} tokens: {time.time() - start}")
+            tokenized_prompt = llm.tokenize(bytes(updated_feed, "utf-8"))
+            logits_processor.update_prompt_length(tokenized_prompt)
+            # start = time.time()
+            feed_padding = llm(tokenized_prompt[-llm.n_ctx()+1:], top_p=0, max_tokens=skip_tokens, logprobs=1, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]["text"]
+            # feed_padding = llm(tokenized_prompt[-llm.n_ctx()+1:], max_tokens=skip_tokens, logprobs=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]["text"]
+            # print(f"UPDATE: Time to generate {skip_tokens} tokens: {time.time() - start}")
             if return_padding:
                 return updated_feed + feed_padding, feed_padding
             return updated_feed + feed_padding
@@ -49,13 +80,14 @@ class ArithmeticProbOrdHider:
         return _update_feed
 
     def initialize_token_getter(self, llm: Llama, bits_per_token: int = 3) -> Callable[[str, bool, int], List[str]]:
-        logits_processor = ExtendCompletionLength(min_completion_length=1, eos_token_id=self.forbidden_tokens)
+        logits_processor = WhitelistAndLength(whitelist_inds=self.token_whitelist, min_completion_length=1, eos_token_id=self.forbidden_tokens)
         def _get_valid_token(prompt: str, get_end_condition: bool = False, recursive_extra_tokens: int = 0) -> List[str]:
             nr_tokens_to_generate = 2**(bits_per_token + recursive_extra_tokens)
-            logits_processor.update_prompt_length(llm.tokenize(bytes(prompt, "utf-8")))
-            start = time.time()
-            output = llm(prompt, top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]
-            print(f"GET TOKEN: Time to generate {nr_tokens_to_generate} tokens: {time.time() - start}")
+            tokenized_prompt = llm.tokenize(bytes(prompt, "utf-8"))
+            logits_processor.update_prompt_length(tokenized_prompt)
+            # start = time.time()
+            output = llm(tokenized_prompt[-llm.n_ctx()+1:], top_p=0, max_tokens=1, logprobs=nr_tokens_to_generate, temperature= 0, top_k=1, repeat_penalty=self.repeat_penalty, logits_processor=logits_processor)["choices"][0]
+            # print(f"GET TOKEN: Time to generate {nr_tokens_to_generate} tokens: {time.time() - start}")
             finish_reason = output["finish_reason"]
             if finish_reason == "stop":
                 return ""
@@ -97,7 +129,13 @@ class ArithmeticProbOrdHider:
             txt = txt.replace(sep, default_sep)
         return [i.strip() for i in txt.split(default_sep) if len(i) > 0]
 
-    def hide_in_single_article(self, binary_secrets: List[str], prompt: str, soft_max_chars_limit: int = 450) -> Tuple[str, str]:
+    def meassure_article_length(self, article: str, chars_or_words_lim: Literal["Chars", "Words"] = "Chars"):
+        if chars_or_words_lim == "Chars":
+            return len(article)
+        elif chars_or_words_lim == "Words":
+            return len(self.split_in_separators(article, [" "]))
+
+    def hide_in_single_article(self, binary_secrets: List[str], prompt: str, soft_max_chars_limit: int = 450, chars_or_words_lim: Literal["Chars", "Words"] = "Chars") -> Tuple[str, str]:
         """
         Encode as many bits of the binary secret into news_string.
 
@@ -120,10 +158,16 @@ class ArithmeticProbOrdHider:
                 chosen_ind = int(next_bits, 2)
                 next_token = next_token_probs[chosen_ind]
                 doctored_article, text_padding = self.update_feed(doctored_article, next_token, return_padding=True)
-                if len(doctored_article) > soft_max_chars_limit and any([_terminator_token in text_padding for _terminator_token in self.end_of_sequence_tokens]):  # doctored_article.endswith((".", "!", "?")):
+                len_doctored_article = self.meassure_article_length(doctored_article, chars_or_words_lim)
+                if len_doctored_article > soft_max_chars_limit and any([_terminator_token in text_padding for _terminator_token in self.end_of_sequence_tokens]):  # doctored_article.endswith((".", "!", "?")):
                     _found_token = [_terminator_token for i, _terminator_token in enumerate(self.end_of_sequence_tokens) if _terminator_token in text_padding][0]
                     index_in_padding_from_end = len(text_padding) - text_padding.find(_found_token)
-                    return doctored_article[:-index_in_padding_from_end], [binary_secret[i+self.bits_per_token:], *binary_secrets[j+1:]]
+                    if index_in_padding_from_end != 1:
+                        doctored_article = doctored_article[:-index_in_padding_from_end]
+                    remaining_secrets = [binary_secret[i+self.bits_per_token:], *binary_secrets[j+1:]]
+                    if any(not len(bs) > 0 for bs in remaining_secrets):
+                        break
+                    return doctored_article, [bs for bs in remaining_secrets if len(bs) > 0]
 
             # Append one "out-of-range" token to signalize the change from one secret to the next
             doctored_article = self.update_feed(doctored_article, self.get_valid_tokens(doctored_article, get_end_condition=True))
@@ -132,7 +176,14 @@ class ArithmeticProbOrdHider:
         doctored_article = self.update_feed(doctored_article, self.get_valid_tokens(doctored_article, get_end_condition=True))
         return doctored_article, []
     
-    def hide_in_whole_newsfeed(self, news_feed: List[str], binary_secrets: List[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5, labeled_for_training_flag=False) -> Dict[str, List[str]]:
+    def check_utf8(self, article: str) -> Dict:
+
+        raise NotImplementedError
+
+    def enforce_utf8_usage(self, article: str, utf8_usage: Dict) -> str:
+        raise NotImplementedError
+
+    def hide_in_whole_newsfeed(self, news_feed: List[str], binary_secrets: List[str], soft_max_chars_lim: int = 450, nr_prompt_words: int = 5, labeled_for_training_flag=False, chars_or_words_lim: Literal["Chars", "Words"] = "Chars") -> Dict[str, List[str]]:
         """
         Encodes the binary_secret in the newsfeed.
 
@@ -149,12 +200,14 @@ class ArithmeticProbOrdHider:
         doctored_newsfeed = []
         remaining_secrets = binary_secrets
         for news_article in tqdm.tqdm(news_feed, "Hidding messages is article nr: ", disable=self.disable_tqdm):
+            # article_utf8_usage = self.check_utf8(news_article)
             prompt = " ".join(self.split_in_separators(news_article)[:nr_prompt_words])
-            doctored_article, remaining_secrets = self.hide_in_single_article(remaining_secrets, prompt, soft_max_chars_lim)
-            if soft_max_chars_lim > len(doctored_article):
+            doctored_article, remaining_secrets = self.hide_in_single_article(remaining_secrets, prompt, soft_max_chars_lim, chars_or_words_lim)
+            len_doctored_article = self.meassure_article_length(doctored_article, chars_or_words_lim)
+            if soft_max_chars_lim > len_doctored_article:
                 len_diff = len(news_article) - len(doctored_article)
                 doctored_article += self.text_to_extend_n_chars_with(news_article, len_diff)
-
+            # doctored_article = self.enforce_utf8_us(doctored_article, article_utf8_usage)
             doctored_newsfeed.append(doctored_article)
             if len(remaining_secrets) == 0:
                 break
@@ -189,7 +242,7 @@ class ArithmeticProbOrdHider:
                 temp_feed = copy.deepcopy(analyzed_feed)
                 temp_feed = self.update_feed(temp_feed, self.get_valid_tokens(temp_feed, True))
                 next_token_probs = self.get_valid_tokens(temp_feed)
-                if len(news_article) > len(temp_feed):
+                if len(news_article) >= len(temp_feed):
                     next_token = self.get_next_possible_token(next_token_probs, news_article, len(temp_feed))
                     all_messages_found = not next_token
                 else:
@@ -207,6 +260,8 @@ class ArithmeticProbOrdHider:
 
 
     def retrieve_multiple_secrets_from_single_article(self, news_article: str, nr_prompt_words: int = 5) -> Tuple[str, bool]:
+        # Reset LLM cache
+        self.llm.reset()
         analyzed_feed = " ".join(self.split_in_separators(news_article)[:nr_prompt_words])
         decoded_messages = []
         all_messages_found = False
