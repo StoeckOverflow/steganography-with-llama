@@ -340,8 +340,8 @@ class Anomaly_Seeker(Seeker):
         features_selected = selector.transform(features_scaled)
 
         # Load the pretrained classifier and predict if a secret is present
-        clf = joblib.load('resources/models/anomaly_detector_SVM.joblib')
-        threshold = joblib.load('resources/models/best_threshold_SVM.joblib')
+        clf = joblib.load('resources/models/anomaly_detector_OCSVM.joblib')
+        threshold = joblib.load('resources/models/best_threshold_OCSVM.joblib')
         
         # Use the decision function to get the score
         decision_score = clf.decision_function(features_selected)
