@@ -1,6 +1,7 @@
-from typing import Literal, Union, List, Dict
+from typing import Literal, Tuple, Union, List, Dict
 from collections.abc import Iterable
 import sys
+from matplotlib.style import available
 import numpy as np
 import json
 from llama_cpp import Llama
@@ -13,14 +14,37 @@ class DynamicPOE:
     """
     Combines a Dynamic Arithmetic Encoding Codec with it's hider.
     """
-    def __init__(self, bits_per_token: int = 3, skip_tokens: int = 0, skip_feeds: int = 0, vocabulary: Iterable = None, path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf", disable_tqdm: bool = True, n_gpu_layers: int = 0):
+    def __init__(
+            self,
+            bits_per_token: int = 3,
+            skip_tokens: int = 0,
+            skip_feeds: int = 0,
+            vocabulary: Iterable = None,
+            path_to_llm: str = "resources/llama-2-7b.Q5_K_M.gguf",
+            disable_tqdm: bool = True,
+            n_gpu_layers: int = 0,
+            optimize_bit_spread: bool = False,
+            ):
         if vocabulary is None:
             vocabulary = self.get_default_vocabulary()
             self.vocabulary = vocabulary
         llm = Llama(model_path=path_to_llm, n_ctx=512, seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=False, n_gpu_layers=n_gpu_layers)
+        self.optimize_bit_spread = optimize_bit_spread
         self.codec = DynamicArithmeticEncoding(frequency_table={char: 1 for char in vocabulary})
+        if optimize_bit_spread:
+            bits_per_token, skip_tokens, skip_feeds = self._optimize_spread(bits_per_token, skip_tokens, skip_feeds)
         self.hider = ArithmeticProbOrdHider(llm, bits_per_token=bits_per_token, skip_tokens=skip_tokens, skip_feeds=skip_feeds, disable_tqdm=disable_tqdm)
-    
+
+    def _optimize_spread(self, tokenizer, bits_per_token: int, skip_tokens: int, skip_feeds: int, buffer: float = 0.25) -> Tuple[int, int, int]:
+        json_file: Dict[str, List[str]] = json.load(sys.stdin)
+        self._secret, self._feed = json_file["secret"], json_file["feed"]
+        bin_secret = self.codec.encode_into_binary(self._secret, 3)
+        needed_tokens = sum(len(s) for s in bin_secret)/2
+        available_tokens = 0
+        for article in self._feed:
+            tokenizer()
+
+
     @staticmethod
     def get_default_vocabulary() -> Iterable:
         return [chr(i) for i in range(32, 127)]
@@ -88,8 +112,11 @@ class DynamicPOE:
         return {"secret": decoded_msg}
     
     def hide_interface(self) -> None:
-        json_file: Dict[str, List[str]] = json.load(sys.stdin)
-        message, news_feed = json_file["secret"], json_file["feed"]
+        if not self.optimize_bit_spread:
+            json_file: Dict[str, List[str]] = json.load(sys.stdin)
+            message, news_feed = json_file["secret"], json_file["feed"]
+        else:
+            message, news_feed = self._secret, self._feed
         doctored_news_feed = self.hide(message, news_feed)
         json.dump(doctored_news_feed, sys.stdout)
 
