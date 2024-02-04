@@ -36,6 +36,7 @@ class DynamicPOE:
         self.hider = ArithmeticProbOrdHider(llm, bits_per_token=bits_per_token, skip_tokens=skip_tokens, skip_feeds=skip_feeds, disable_tqdm=disable_tqdm)
 
     def _optimize_spread(self, tokenizer, bits_per_token: int, skip_tokens: int, skip_feeds: int, buffer: float = 0.25) -> Tuple[int, int, int]:
+        raise NotImplementedError
         json_file: Dict[str, List[str]] = json.load(sys.stdin)
         self._secret, self._feed = json_file["secret"], json_file["feed"]
         bin_secret = self.codec.encode_into_binary(self._secret, 3)
