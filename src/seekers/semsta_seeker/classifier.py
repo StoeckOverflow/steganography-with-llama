@@ -1,66 +1,21 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Subset
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import numpy as np
+from sklearn.utils import resample
 from sklearn.model_selection import StratifiedKFold
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-'''DEPRECATED
-class BahdanauAttention(nn.Module):
-    def __init__(self, key_size, query_size, hidden_size):
-        super(BahdanauAttention, self).__init__()
-        self.key_layer = nn.Linear(key_size, hidden_size)
-        self.query_layer = nn.Linear(query_size, hidden_size)
-        self.energy_layer = nn.Linear(hidden_size, 1)
-        #self.dropout = nn.Dropout(0.1)
-
-    def forward(self, query, keys):
-        transformed_query = self.query_layer(query)  # [batch_size, seq_len, hidden_size]
-        transformed_keys = self.key_layer(keys)  # [batch_size, seq_len, hidden_size]
-        
-        # Compute energy scores
-        energy = torch.tanh(transformed_query + transformed_keys)  # Broadcasting is automatically handled
-        #energy = self.dropout(energy)
-        energy = self.energy_layer(energy).squeeze(-1)  # [batch_size, seq_len]
-
-        # Compute attention weights
-        attention = F.softmax(energy, dim=1)  # [batch_size, seq_len]
-        return attention
-class Classifier(nn.Module):
-    def __init__(self, statistical_dim, semantic_dim, num_classes=2):
-        super(Classifier, self).__init__()
-        self.attention = BahdanauAttention(statistical_dim, semantic_dim)
-        self.dense_layer = nn.Linear(statistical_dim, semantic_dim)
-        self.classification_layer = nn.Linear(semantic_dim, num_classes)
-
-    def forward(self, fused_features, original_features):
-        print('begin')
-        # Attention mechanism
-        attention_weights = self.attention(fused_features, original_features)
-        attention_weights = attention_weights.unsqueeze(1)
-        fused_vector = torch.bmm(attention_weights, original_features).squeeze(1)
-        
-        #aggregated_vector = torch.mean(fused_vector, dim=1)
-        #print('Aggregated Vector Shape')
-        #print(aggregated_vector.shape)
-        aggregate_layer =  self.dense_layer(fused_vector)
-        print('Aggregated Layer Shape after dense layer')
-        print(aggregate_layer.shape)
-        
-        output_vector = self.classification_layer(aggregate_layer)
-        print('Output vector shape')
-        print(output_vector.shape)
-        probability_vector = torch.softmax(output_vector, dim=1)
-        print('Probability Vector shape')
-        print(probability_vector.shape)
-        print(probability_vector)
-
-        print('end')
-        return probability_vector
-
-''' 
+from sklearn.model_selection import LeaveOneOut
+import nltk
+from nltk.corpus import wordnet
+import random
+from transformers import pipeline
+#nltk.download('wordnet')
+#nltk.download('averaged_perceptron_tagger')
+translate_to_de = pipeline("translation_en_to_de", model="Helsinki-NLP/opus-mt-en-de")
+translate_to_en = pipeline("translation_de_to_en", model="Helsinki-NLP/opus-mt-de-en")
 
 class BahdanauAttention(nn.Module):
     def __init__(self, n_hidden_enc, n_hidden_dec):
@@ -158,13 +113,14 @@ class Classifier_Trainer():
             
         torch.save(self.state_dict(), 'resources/models/classifier.pth')
     
-    def train_classifier_with_cross_validation(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001, batch_size=64, k_folds=5):        
+    def train_classifier_with_cross_validation(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001, batch_size=64, k_folds=10):        
         numeric_train_labels = [1 if int(label) == -1 else 0 for label in train_labels]
         train_labels = torch.tensor(numeric_train_labels, dtype=torch.long)
         y_numpy = train_labels.numpy()
         
         skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
-        
+        metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
+
         for fold, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(y_numpy)), y_numpy)):
             print(f"Training on fold {fold+1}/{k_folds}...")
             
@@ -254,8 +210,81 @@ class Classifier_Trainer():
                 acc = accuracy_score(all_targets, all_predictions)
                 rec = recall_score(all_targets, all_predictions, average='binary')
                 pre = precision_score(all_targets, all_predictions, average='binary', zero_division=0)
+                
+                metrics['accuracy'].append(acc)
+                metrics['precision'].append(pre)
+                metrics['recall'].append(rec)
+                metrics['f1'].append(f1)
+                
                 print(f'Fold {fold+1}, Epoch [{epoch+1}/{num_epochs}], Validation Loss: {val_loss/len(val_loader)}, F1 Score: {f1:.4f}, Precision: {pre:.4f}, Recall: {rec:.4f}, Accuracy: {acc:.4f}')
+                
+            for key in metrics:
+                metrics[key] = np.mean(metrics[key])
+                avg_metric = np.mean(metrics[key])
+                print(f"Average {key}: {avg_metric:.4f}")
+            
+            return metrics
 
+    def train_classifier_with_loocv(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001):
+        # Convert labels to a numeric format if not already done
+        numeric_train_labels = [1 if int(label) == -1 else 0 for label in train_labels]
+        train_labels_tensor = torch.tensor(numeric_train_labels, dtype=torch.long)
+        
+        # Initialize LeaveOneOut
+        loo = LeaveOneOut()
+        
+        # Convert features and labels to a TensorDataset
+        dataset = TensorDataset(original_encoder_features, fused_features, train_labels_tensor)
+        
+        # Placeholder for metrics
+        metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
+
+        for train_index, test_index in loo.split(original_encoder_features.numpy()):
+            print(f"Training on sample {test_index[0]+1} as test set...")
+
+            # Create train and test subsets using indices
+            train_subset = Subset(dataset, train_index)
+            test_subset = Subset(dataset, test_index)
+
+            # DataLoader for the current LOOCV split
+            train_loader = DataLoader(train_subset, batch_size=len(train_subset))  # Using full batch
+            test_loader = DataLoader(test_subset, batch_size=1)
+
+            # Re-initialize model and optimizer here if necessary
+            self.classifier.apply(self.init_weights)
+            optimizer = torch.optim.Adam(self.classifier.parameters(), lr=learning_rate)
+            criterion = nn.CrossEntropyLoss()
+
+            # Training phase
+            self.classifier.train()
+            for epoch in range(num_epochs):
+                for batch in train_loader:
+                    inputs, fused, labels = batch
+                    optimizer.zero_grad()
+                    outputs = self.classifier(fused, inputs)  # Adjust based on your classifier input
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+
+            # Evaluation phase
+            self.classifier.eval()
+            with torch.no_grad():
+                for inputs, fused, labels in test_loader:
+                    outputs = self.classifier(fused, inputs)  # Adjust based on your classifier input
+                    predicted = outputs.argmax(1)
+                    # Update metrics
+                    metrics['accuracy'].append(accuracy_score(labels.numpy(), predicted.numpy()))
+                    metrics['precision'].append(precision_score(labels.numpy(), predicted.numpy(), zero_division=0))
+                    metrics['recall'].append(recall_score(labels.numpy(), predicted.numpy()))
+                    metrics['f1'].append(f1_score(labels.numpy(), predicted.numpy()))
+
+        # Calculate and print average metrics
+        for key in metrics:
+            metrics[key] = np.mean(metrics[key])
+            print(f"Average {key}: {metrics[key]:.4f}")
+        
+        return metrics
+    
     def evaluate_classifier(self, original_encoder_features, fused_features, test_labels, batch_size=64):
         self.classifier.eval()
         
