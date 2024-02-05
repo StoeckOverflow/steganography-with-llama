@@ -7,29 +7,6 @@ import numpy as np
 import pickle
 import os
 
-class AutoEncoder2(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim):
-        super(AutoEncoder2, self).__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dims[0]),
-            nn.ReLU(True),
-            nn.Linear(hidden_dims[0], output_dim),
-            nn.ReLU(True)  # You can use sigmoid or another activation function depending on your choice
-        )
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.Linear(output_dim, hidden_dims[0]),
-            nn.ReLU(True),
-            nn.Linear(hidden_dims[0], input_dim),
-            nn.Sigmoid()  # Assuming the input data is normalized between 0 and 1
-        )
-
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return encoded, decoded
-
 class AutoEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
         super(AutoEncoder, self).__init__()
@@ -70,7 +47,6 @@ class StatisticalFeatureExtractor():
         self.tfidf_vectorizer.fit(flat_train_newsfeeds)
         tfidf_matrix = self.tfidf_vectorizer.transform(flat_train_newsfeeds).toarray()
 
-        # Split data into training and validation sets
         split_index = int(np.floor((1 - validation_split) * len(tfidf_matrix)))
         train_data, val_data = tfidf_matrix[:split_index], tfidf_matrix[split_index:]
 
@@ -85,6 +61,9 @@ class StatisticalFeatureExtractor():
         optimizer = optim.Adam(self.auto_encoder.parameters(), lr=learning_rate)
 
         for epoch in range(num_epochs):
+
+            # Train loop
+            self.auto_encoder.train()
             total_train_loss = 0.0
             for inputs in train_loader:
                 inputs = inputs[0]
@@ -95,7 +74,7 @@ class StatisticalFeatureExtractor():
                 optimizer.step()
                 total_train_loss += loss.item()
 
-            # Validate the model
+            # Validation loop
             self.auto_encoder.eval()
             total_val_loss = 0.0
             with torch.no_grad():
@@ -111,14 +90,12 @@ class StatisticalFeatureExtractor():
 
         model_dir = 'resources/models/'
 
-        # Check if the directory exists, and if not, create it
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
             
         tfidf_vectorizer_path = os.path.join(model_dir, 'tfidf_vectorizer.pkl')
         autoencoder_model_path = os.path.join(model_dir, 'autoencoder_model.pth')
 
-        # Save the model and vectorizer
         with open(tfidf_vectorizer_path, 'wb') as f:
             pickle.dump(self.tfidf_vectorizer, f)
 
@@ -135,9 +112,8 @@ class StatisticalFeatureExtractor():
             raise FileNotFoundError("Model or vectorizer file not found. Please train the AutoEncoder first.") from e
 
     def get_statistical_features(self, newsfeed):
-        # Assuming that self.auto_encoder and self.tfidf_vectorizer have been loaded previously
-        tfidf_vectors = self.tfidf_vectorizer.transform(newsfeed)  # Assuming newsfeed is a single string of text
+        tfidf_vectors = self.tfidf_vectorizer.transform(''.join(newsfeed))  # Assuming newsfeed is a string array, so combine it to one string
         tfidf_tensor = torch.tensor(tfidf_vectors.toarray(), dtype=torch.float32)
         with torch.no_grad():
             latent_representation, _ = self.auto_encoder(tfidf_tensor)
-        return latent_representation # Remove batch dimension if batch size is 1
+        return latent_representation

@@ -15,7 +15,7 @@ class DataAugmentor:
     def __init__(self):
         self.llm = Llama(model_path="llama-2-7b.Q5_K_M.gguf", seed=1337, verbose=False, logits_all=True, n_threads=None, use_mlock=True)
     
-    def synonym_replacement(self, sentence, n):
+    def synonym_replacement(self, sentence, n): # n is the number of words you want to replace
         words = nltk.word_tokenize(sentence)
         new_words = words.copy()
         random_word_list = list(set([word for word in words if word.isalnum()]))
@@ -26,7 +26,7 @@ class DataAugmentor:
                 synonym = random.choice(list(synonyms))
                 new_words = [synonym if word == random_word else word for word in new_words]
                 num_replaced += 1
-            if num_replaced >= n: # n is the number of words you want to replace
+            if num_replaced >= n:
                 break
 
         sentence = ' '.join(new_words)
@@ -47,7 +47,6 @@ class DataAugmentor:
                     # If no synonym exists, keep the original word
                     new_words.append(word)
             else:
-                # Keep all other words as they are
                 new_words.append(word)
 
         sentence = ' '.join(new_words)
@@ -124,17 +123,7 @@ class DataAugmentor:
             perturbed_article = prompt + completion
             perturbed_feed.append(perturbed_article)
         return perturbed_feed
-    
-    def strip_after_last_period(self, s):
-        # Find the last occurrence of the period
-        last_period_index = s.rfind('.')
-        # If a period is found, return the substring up to the period
-        if last_period_index != -1:
-            return s[:last_period_index]
-        else:
-            # Return the original string if there's no period
-            return s
-    
+
     def create_augmented_datasets(self, directory_path, save_dir):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -157,16 +146,14 @@ class DataAugmentor:
             original_feed = [self.back_translate(article) for article in original_feed]
 
             if i in llama_indices:
-                # Perturb the first 4 articles with LLaMA
-                for article in original_feed[:4]:
-                    augmented_feed.append(self.perturb_feed_with_llama([article])[0])  # Assuming it returns a list of articles
-                augmented_feed.extend(original_feed[4:])  # Add the rest of the articles unchanged
+                # Perturb the first 4 articles with LLaMA, Add the rest of the articles unchanged
+                augmented_feed = self.perturb_feed_with_llama(original_feed)[0:4]
+                augmented_feed.extend(original_feed[5:])
                 label = -1
             elif i in synonym_indices:
-                # Perturb the first 4 articles with synonym replacement
-                for article in original_feed[:4]:
-                    augmented_feed.append(self.synonym_replacement_perturb_k_words(article, random.randint(3, 6)))
-                augmented_feed.extend(original_feed[4:])  # Add the rest of the articles unchanged
+                # Perturb the first 4 articles with synonym replacement, Add the rest of the articles unchanged
+                augmented_feed= self.synonym_replacement_perturb_k_words(original_feed[:4], random.randint(3, 6))
+                augmented_feed.extend(original_feed[5:])
                 label = -1
             else:
                 # No perturbation
