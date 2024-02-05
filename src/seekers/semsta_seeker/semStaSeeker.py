@@ -8,7 +8,9 @@ from sklearn.model_selection import train_test_split
 from glob import glob
 import json
 from tqdm import tqdm
-import os
+import numpy as np
+from .data_augmentor import DataAugmentor
+import csv
 
 class SemStaSeeker(Seeker):
     
@@ -20,7 +22,7 @@ class SemStaSeeker(Seeker):
         self.classifier_trainer = Classifier_Trainer(self.classifier)
         self.disable_tqdm = disable_tqdm
 
-    def train_test_split(self, newsfeeds, labels, test_size=0.3):
+    def train_test_split(self, newsfeeds, labels, test_size=0.2):
         return train_test_split(newsfeeds, labels, test_size=test_size, train_size=1 - test_size, random_state=42, stratify=labels)
         
     def load_data_from_dir(self, newsfeeds_dir):
@@ -80,12 +82,6 @@ class SemStaSeeker(Seeker):
         print('Evaluate Classifier')
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
         
-        print('Evaluate Classifier on Stemo Newsfeeds')
-        all_newsfeeds_stemo, all_labels_stemo = self.load_data_from_dir('resources/feeds/doctored_feeds_newsfeeds')
-        stemo_newsfeeds_fused_features_tensor, stemo_newsfeeds_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(all_newsfeeds_stemo)
-        self.classifier_trainer.evaluate_classifier(stemo_newsfeeds_original_encoder_features_tensor, stemo_newsfeeds_fused_features_tensor, all_labels_stemo)
-        
-
     def train_and_evaluate_model(self, newsfeeds_dir, save_dir='resources/models'):
         all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir)
         train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(all_newsfeeds, all_labels)
@@ -97,7 +93,8 @@ class SemStaSeeker(Seeker):
         print('Evaluate Fused Features of train feeds')
         train_fused_features_tensor, train_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(train_newsfeeds)
         print('Fused Features of train feeds evaluated')
-
+        
+        '''
         train_fused_features_save_path = os.path.join(save_dir, 'train_fused_features.pth')
         torch.save(train_fused_features_tensor, train_fused_features_save_path)
         train_original_encoder_features_save_path = os.path.join(save_dir, 'train_original_encoder_features.pth')
@@ -105,11 +102,11 @@ class SemStaSeeker(Seeker):
         train_data_save_path = os.path.join(save_dir, 'train_data.json')
         with open(train_data_save_path, 'w') as f:
             json.dump({'newsfeeds': train_newsfeeds, 'labels': train_labels}, f)
-
+        '''
         print('Evaluate Fused Features of test feeds')
         test_fused_features_tensor, test_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(test_newsfeeds)
         print('Fused Features of test feeds evaluated')
-
+        '''
         test_fused_features_save_path = os.path.join(save_dir, 'test_fused_features.pth')
         torch.save(test_fused_features_tensor, test_fused_features_save_path)
         test_original_encoder_features_save_path = os.path.join(save_dir, 'test_original_encoder_features.pth')
@@ -117,11 +114,61 @@ class SemStaSeeker(Seeker):
         test_data_save_path = os.path.join(save_dir, 'test_data.json')
         with open(test_data_save_path, 'w') as f:
             json.dump({'newsfeeds': test_newsfeeds, 'labels': test_labels}, f)
-
+        '''
         print('Training Classifier...')
         self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
         print('Classifier trained')
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
+
+    def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=100):
+        all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
+        
+        # Placeholder for aggregated metrics across bootstraps
+        bootstrap_metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
+        
+        for i in range(n_bootstraps):
+            print(f'Bootstrap iteration {i+1}/{n_bootstraps}')
+            
+            # Resample newsfeeds and labels with replacement to create a bootstrapped dataset
+            bootstrapped_newsfeeds, bootstrapped_labels = DataAugmentor.resample_with_replacement(texts=all_newsfeeds, labels=all_labels)
+            
+            # Train AutoEncoder on the bootstrapped dataset
+            print('Training AutoEncoder...')
+            self.statistical_feature_extractor.train_autoencoder(train_newsfeeds=bootstrapped_newsfeeds)
+            print('AutoEncoder trained')
+            
+            # Evaluate fused features for the bootstrapped dataset
+            print('Evaluate Fused Features of bootstrapped feeds')
+            train_fused_features_tensor, train_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(newsfeeds=bootstrapped_newsfeeds)
+            print('Fused Features of bootstrapped feeds evaluated')
+            
+            # Train Classifier using LOOCV on the bootstrapped dataset
+            print('Training Classifier...')
+            metrics = self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, bootstrapped_labels)
+            
+            # Aggregate metrics from this bootstrap iteration
+            for key in bootstrap_metrics:
+                bootstrap_metrics[key].append(metrics[key])
+            print('Classifier trained and evaluated for this bootstrap iteration')
+        
+        # After all iterations, calculate and print the mean and standard deviation of metrics across bootstraps
+        print('Final evaluation across all bootstrapped datasets:')
+        for metric in bootstrap_metrics:
+            mean_metric = np.mean(bootstrap_metrics[metric])
+            std_metric = np.std(bootstrap_metrics[metric])
+            print(f"{metric.capitalize()} - Mean: {mean_metric:.4f}, Std: {std_metric:.4f}")
+        
+        metrics_csv_path = "bootstrap_metrics.csv"
+        with open(metrics_csv_path, mode="w", newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Metric", "Mean", "Standard Deviation"])  # Write the header
+            
+            for metric in bootstrap_metrics:
+                mean_metric = np.mean(bootstrap_metrics[metric])
+                std_metric = np.std(bootstrap_metrics[metric])
+                writer.writerow([metric.capitalize(), f"{mean_metric:.4f}", f"{std_metric:.4f}"])  # Write each metric row
+
+        print(f"Metrics saved to {metrics_csv_path}")
 
     def detect_secret(self, newsfeed: list[str]) -> bool:
         self.classifier.eval()

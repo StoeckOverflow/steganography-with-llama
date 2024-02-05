@@ -9,7 +9,7 @@ import os
 
 class AutoEncoder2(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
-        super(AutoEncoder, self).__init__()
+        super(AutoEncoder2, self).__init__()
         # Encoder
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dims[0]),
