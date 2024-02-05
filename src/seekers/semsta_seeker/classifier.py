@@ -185,14 +185,18 @@ class Classifier_Trainer():
                 best_model = best_fold_model
 
             for key in metrics:
-                metrics[key] = np.mean(metrics[key])
                 avg_metric = np.mean(metrics[key])
                 print(f"Fold: {fold+1}, Average {key}: {avg_metric:.4f}")
         
         if best_model is not None:
             self.classifier.load_state_dict(best_model)
-            
-        return metrics, best_f1_score, best_model
+        
+        avg_metrics = {}
+        for key in metrics:
+            avg_metrics[key] = np.mean(metrics[key])
+            print(f"Fold: {fold+1}, Average {key}: {avg_metrics[key]:.4f}")
+        
+        return avg_metrics, best_f1_score, best_model
 
     def train_classifier_with_loocv(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001):
         numeric_train_labels = [1 if int(label) == -1 else 0 for label in train_labels]
