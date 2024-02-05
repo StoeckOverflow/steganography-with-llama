@@ -84,7 +84,7 @@ class Classifier_Trainer():
             print(f"Training on fold {fold+1}/{k_folds}...")
             
             best_fold_f1_score = -float('inf')
-            patience = 10
+            patience = 25
             patience_counter = 0
             
             self.classifier.apply(self.init_weights)
