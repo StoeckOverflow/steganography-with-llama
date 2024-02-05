@@ -16,3 +16,4 @@ spacy-loggers==1.0.5
 matplotlib==3.8.1
 matplotlib-inline==0.1.6
 llama-cpp-python==0.2.32
+nltk==3.8.1
