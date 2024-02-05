@@ -119,7 +119,7 @@ class SemStaSeeker(Seeker):
         print('Classifier trained')
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
 
-    def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=100):
+    def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=50):
         all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
         train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(newsfeeds=all_newsfeeds, labels=all_labels, test_size=0.1)
 
@@ -143,7 +143,7 @@ class SemStaSeeker(Seeker):
             print('Training Classifier...')
             metrics, best_f1_score_bootstrap, best_model_bootstrap = self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, bootstrapped_labels)
             
-            if best_f1_score_bootstrap > best_f1_score:
+            if best_f1_score_bootstrap > best_f1_score and best_f1_score_bootstrap != 1:
                 best_model = best_model_bootstrap
 
             for key in bootstrap_metrics:
@@ -164,17 +164,21 @@ class SemStaSeeker(Seeker):
         test_fused_features_tensor, test_original_encoder_features_tensor = self.compute_fused_and_original_encoder_features(test_newsfeeds)
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
 
-    #TODO: Refine Inference Method
     def detect_secret(self, newsfeed: list[str]) -> bool:
+        self.statistical_feature_extractor.load_resources()
+        model_path = 'resources/models/classifier.pth'
+        model_state_dict = torch.load(model_path)
+        self.classifier.load_state_dict(model_state_dict)
         self.classifier.eval()
         with torch.no_grad():
             semantic_features = self.semantic_feature_extractor(newsfeed)
             statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
             fused_features = self.fusion_component(semantic_features, statistical_features)
             classifier_output = self.classifier(fused_features)
-            predicted_labels = torch.round(torch.sigmoid(classifier_output)).squeeze()
-            print(f"Classification Output after exp conversion: {predicted_labels}")
-            decision = classifier_output.item() >= 0.5
+            probability_vector = torch.softmax(classifier_output, dim=1)
+            predicted_label = torch.argmax(probability_vector, dim=1)
+            print(f"Classification Output after exp conversion: {predicted_label}")
+            decision = True if 1 else False
 
         return decision
     
