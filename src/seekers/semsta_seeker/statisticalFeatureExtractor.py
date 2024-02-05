@@ -112,7 +112,7 @@ class StatisticalFeatureExtractor():
             raise FileNotFoundError("Model or vectorizer file not found. Please train the AutoEncoder first.") from e
 
     def get_statistical_features(self, newsfeed):
-        tfidf_vectors = self.tfidf_vectorizer.transform(''.join(newsfeed))  # Assuming newsfeed is a string array, so combine it to one string
+        tfidf_vectors = self.tfidf_vectorizer.transform(newsfeed) # Assuming newsfeed is a string array, so combine it to one string
         tfidf_tensor = torch.tensor(tfidf_vectors.toarray(), dtype=torch.float32)
         with torch.no_grad():
             latent_representation, _ = self.auto_encoder(tfidf_tensor)

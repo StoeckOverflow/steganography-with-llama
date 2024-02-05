@@ -247,7 +247,6 @@ class Classifier_Trainer():
         
         numeric_test_labels = [1 if int(label) == -1 else 0 for label in test_labels]
         test_labels = torch.tensor(numeric_test_labels, dtype=torch.long)
-        
         test_dataset = TensorDataset(original_encoder_features, fused_features, test_labels)
         test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
         

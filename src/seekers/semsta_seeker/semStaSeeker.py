@@ -121,7 +121,7 @@ class SemStaSeeker(Seeker):
 
     def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=100):
         all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
-        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(all_newsfeeds, all_labels, 0.1)
+        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(newsfeeds=all_newsfeeds, labels=all_labels, test_size=0.1)
 
         bootstrap_metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
         best_model = None
