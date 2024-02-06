@@ -11,10 +11,14 @@ from .classifier import Classifier, Classifier_Trainer
 from .semanticFeatureExtractor import SemanticFeatureExtractor
 from .statisticalFeatureExtractor import StatisticalFeatureExtractor
 from .data_augmentor import DataAugmentor
+import random
 
 class SemStaSeeker(Seeker):
-    
     def __init__(self, alpha=0.25, semantic_dim=1024, statistical_dim=1024, num_classes=2, output_size=1024, disable_tqdm=False):
+        seed = 42
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         self.fusion_component = FusionComponent(semantic_dim, statistical_dim, alpha)
         self.semantic_feature_extractor = SemanticFeatureExtractor(output_size=output_size)
         self.statistical_feature_extractor = StatisticalFeatureExtractor(hidden_dim=statistical_dim, output_dim=output_size, disable_tqdm=disable_tqdm)
@@ -120,8 +124,8 @@ class SemStaSeeker(Seeker):
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
 
     def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=50):
-        all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
-        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(newsfeeds=all_newsfeeds, labels=all_labels, test_size=0.1)
+        train_newsfeeds, train_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
+        test_newsfeeds, test_labels = self.load_data_from_dir(newsfeeds_dir='resources/feeds/doctored_feeds_newsfeeds_augmented_test')
 
         bootstrap_metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
         best_model = None
@@ -166,22 +170,28 @@ class SemStaSeeker(Seeker):
 
     def detect_secret(self, newsfeed: list[str]) -> bool:
         self.statistical_feature_extractor.load_resources()
-        model_path = 'resources/models/classifier.pth'
-        model_state_dict = torch.load(model_path)
+        model_path = 'resources/models/best_classifier_bootstrapped.pth'
+        model_state_dict = torch.load(model_path, map_location=torch.device('cpu'))
         self.classifier.load_state_dict(model_state_dict)
         self.classifier.eval()
         with torch.no_grad():
             semantic_features = self.semantic_feature_extractor(newsfeed)
             statistical_features = self.statistical_feature_extractor.get_statistical_features(newsfeed)
+            
+            if semantic_features.dim() == 2:  # [sequence_length, feature_size]
+                semantic_features = semantic_features.unsqueeze(0)  # [1, sequence_length, feature_size]
+            if statistical_features.dim() == 1:
+                statistical_features = statistical_features.unsqueeze(0)  # [1, feature_size]
+
             fused_features = self.fusion_component(semantic_features, statistical_features)
-            classifier_output = self.classifier(fused_features)
+            classifier_output = self.classifier(fused_features, semantic_features)
             probability_vector = torch.softmax(classifier_output, dim=1)
             predicted_label = torch.argmax(probability_vector, dim=1)
-            print(f"Classification Output after exp conversion: {predicted_label}")
-            decision = True if 1 else False
+
+            decision = predicted_label.item() == 1
 
         return decision
-    
+ 
     def compute_fused_and_original_encoder_features(self, newsfeeds):
         newsfeeds_fused_features_list = []
         newsfeeds_original_encoder_features_list = []
