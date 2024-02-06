@@ -40,7 +40,8 @@ class StatisticalFeatureExtractor():
         self.hidden_dim = hidden_dim
         self.tfidf_vectorizer = TfidfVectorizer(max_features=self.input_dim)
         self.auto_encoder = AutoEncoder(input_dim=self.input_dim, hidden_dims=[hidden_dim, int(hidden_dim/2)], output_dim=output_dim)
-        self.disable_tqdm = disable_tqdm  
+        self.disable_tqdm = disable_tqdm
+        self.output_dim = output_dim
      
     def train_autoencoder(self, train_newsfeeds, num_epochs=50, learning_rate=0.001, batch_size=32, validation_split=0.3):
         flat_train_newsfeeds = [' '.join(sublist) for sublist in train_newsfeeds]
