@@ -69,7 +69,7 @@ class Classifier_Trainer():
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         
-    def train_classifier_with_cross_validation(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001, batch_size=64, k_folds=10):        
+    def train_classifier_with_cross_validation(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001, batch_size=64, k_folds=5):        
         numeric_train_labels = [1 if int(label) == -1 else 0 for label in train_labels]
         train_labels = torch.tensor(numeric_train_labels, dtype=torch.long)
         y_numpy = train_labels.numpy()
@@ -84,7 +84,7 @@ class Classifier_Trainer():
             print(f"Training on fold {fold+1}/{k_folds}...")
             
             best_fold_f1_score = -float('inf')
-            patience = 25
+            patience = 100
             patience_counter = 0
             
             self.classifier.apply(self.init_weights)
@@ -98,15 +98,16 @@ class Classifier_Trainer():
             train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
             val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
 
+            '''
             no_decay = ['bias', 'LayerNorm.weight']
             optimizer_grouped_parameters = [
                 {'params': [p for n, p in self.classifier.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
                 {'params': [p for n, p in self.classifier.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
             ]
-            
-            optimizer = torch.optim.Adam(optimizer_grouped_parameters , lr=learning_rate)
+            '''
+            optimizer = torch.optim.Adam(self.classifier.parameters(), lr=learning_rate)
             criterion = nn.CrossEntropyLoss()
-            scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)
+            #scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=10, verbose=True)
             
             for epoch in range(num_epochs):
                 self.classifier.train()
@@ -154,8 +155,8 @@ class Classifier_Trainer():
                         all_predictions.extend(predicted_labels.cpu().numpy())
                         all_targets.extend(batch_labels.cpu().numpy())
                 
-                avg_val_loss = val_loss / len(val_loader)
-                scheduler.step(avg_val_loss)
+                #avg_val_loss = val_loss / len(val_loader)
+                #scheduler.step(avg_val_loss)
 
                 f1 = f1_score(all_targets, all_predictions, average='binary')
                 acc = accuracy_score(all_targets, all_predictions)
@@ -169,7 +170,7 @@ class Classifier_Trainer():
                 
                 print(f'Fold {fold+1}, Epoch [{epoch+1}/{num_epochs}], Validation Loss: {val_loss/len(val_loader)}, F1 Score: {f1:.4f}, Precision: {pre:.4f}, Recall: {rec:.4f}, Accuracy: {acc:.4f}')
                 
-                if f1 > best_fold_f1_score:
+                if f1 > best_fold_f1_score and f1 != 1:
                     best_fold_f1_score = f1
                     best_fold_model = copy.deepcopy(self.classifier.state_dict())
                     patience_counter = 0
@@ -180,13 +181,9 @@ class Classifier_Trainer():
                     print(f"Stopping early at epoch {epoch+1} due to no improvement.")
                     break
             
-            if best_fold_f1_score > best_f1_score:
+            if best_fold_f1_score > best_f1_score and best_fold_f1_score != 1:
                 best_f1_score = best_fold_f1_score
                 best_model = best_fold_model
-
-            for key in metrics:
-                avg_metric = np.mean(metrics[key])
-                print(f"Fold: {fold+1}, Average {key}: {avg_metric:.4f}")
         
         if best_model is not None:
             self.classifier.load_state_dict(best_model)
@@ -197,6 +194,55 @@ class Classifier_Trainer():
             print(f"Fold: {fold+1}, Average {key}: {avg_metrics[key]:.4f}")
         
         return avg_metrics, best_f1_score, best_model
+
+    def train_and_validate_different_sets(self, train_X, train_Y, val_X, val_Y, num_epochs=100, learning_rate=0.0001, batch_size=64):
+        # Convert data to PyTorch tensors
+        train_X_tensor = torch.tensor(train_X, dtype=torch.float)
+        train_Y_tensor = torch.tensor(train_Y, dtype=torch.long)
+        val_X_tensor = torch.tensor(val_X, dtype=torch.float)
+        val_Y_tensor = torch.tensor(val_Y, dtype=torch.long)
+        
+        # Create DataLoader for training and validation datasets
+        train_loader = DataLoader(TensorDataset(train_X_tensor, train_Y_tensor), batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(TensorDataset(val_X_tensor, val_Y_tensor), batch_size=batch_size, shuffle=False)
+        
+        # Initialize model, loss criterion, and optimizer
+        self.classifier.apply(self.init_weights)
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.classifier.parameters(), lr=learning_rate)
+        
+        # Training loop
+        for epoch in range(num_epochs):
+            self.classifier.train()
+            for batch_X, batch_Y in train_loader:
+                optimizer.zero_grad()
+                outputs = self.classifier(batch_X)
+                loss = criterion(outputs, batch_Y)
+                loss.backward()
+                optimizer.step()
+            
+            # Optional: Print training loss, accuracy, etc.
+        
+        # Validation phase
+        self.classifier.eval()
+        with torch.no_grad():
+            val_predictions = []
+            val_true = []
+            for batch_X, batch_Y in val_loader:
+                outputs = self.classifier(batch_X)
+                _, predicted = torch.max(outputs.data, 1)
+                val_predictions.extend(predicted.numpy())
+                val_true.extend(batch_Y.numpy())
+        
+        # Calculate validation metrics
+        accuracy = accuracy_score(val_true, val_predictions)
+        precision = precision_score(val_true, val_predictions, average='macro')
+        recall = recall_score(val_true, val_predictions, average='macro')
+        f1 = f1_score(val_true, val_predictions, average='macro')
+        
+        # Print or return the validation metrics
+        print(f'Validation Results - Accuracy: {accuracy}, Precision: {precision}, Recall: {recall}, F1: {f1}')
+        return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1}
 
     def train_classifier_with_loocv(self, original_encoder_features, fused_features, train_labels, num_epochs=100, learning_rate=0.0001):
         numeric_train_labels = [1 if int(label) == -1 else 0 for label in train_labels]

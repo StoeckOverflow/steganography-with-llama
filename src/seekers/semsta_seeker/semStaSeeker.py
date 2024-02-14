@@ -55,7 +55,7 @@ class SemStaSeeker(Seeker):
         
         return all_newsfeeds, all_labels
 
-    def train_and_evaluate_model_on_saved_data(self):
+    def train_and_evaluate_model_on_saved_data(self, save_dir='resources/models'):
         with open('resources/models/train_data.json', 'r') as json_file:
             train_data = json.load(json_file)
         train_newsfeeds = train_data['newsfeeds']
@@ -81,14 +81,16 @@ class SemStaSeeker(Seeker):
         print('Fused Features of test feeds evaluated')
 
         print('Training Classifier...')
-        self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
+        avg_metrics, best_f1_score, best_model = self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
+        self.classifier.load_state_dict(best_model)
+        torch.save(self.classifier.state_dict(), os.path.join(save_dir,'best_classifier_crossvalidation.pth'))
         print('Classifier trained')
         print('Evaluate Classifier')
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
         
     def train_and_evaluate_model(self, newsfeeds_dir, save_dir='resources/models'):
-        all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir)
-        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(all_newsfeeds, all_labels)
+        train_newsfeeds, train_labels = self.load_data_from_dir(newsfeeds_dir)
+        test_newsfeeds, test_labels = self.load_data_from_dir('resources/feeds/doctored_feeds_newsfeeds')
         
         print('Training AutoEncoder...')
         self.statistical_feature_extractor.train_autoencoder(train_newsfeeds)
@@ -119,14 +121,16 @@ class SemStaSeeker(Seeker):
             json.dump({'newsfeeds': test_newsfeeds, 'labels': test_labels}, f)
         
         print('Training Classifier...')
-        self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
+        avg_metrics, best_f1_score, best_model = self.classifier_trainer.train_classifier_with_cross_validation(train_original_encoder_features_tensor, train_fused_features_tensor, train_labels)
+        self.classifier.load_state_dict(best_model)
+        torch.save(self.classifier.state_dict(), os.path.join(save_dir,'best_classifier_crossvalidation.pth'))
         print('Classifier trained')
         self.classifier_trainer.evaluate_classifier(test_original_encoder_features_tensor, test_fused_features_tensor, test_labels)
 
-    def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=50):
-        train_newsfeeds, train_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
-        test_newsfeeds, test_labels = self.load_data_from_dir(newsfeeds_dir='resources/feeds/doctored_feeds_newsfeeds_augmented_test')
-
+    def train_and_evaluate_model_bootstrapped(self, newsfeeds_dir, save_dir='resources/models', n_bootstraps=10):
+        all_newsfeeds, all_labels = self.load_data_from_dir(newsfeeds_dir=newsfeeds_dir)
+        train_newsfeeds, test_newsfeeds, train_labels, test_labels = self.train_test_split(all_newsfeeds, all_labels)
+        
         bootstrap_metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
         best_model = None
         best_f1_score = -float('inf')
@@ -170,7 +174,7 @@ class SemStaSeeker(Seeker):
 
     def detect_secret(self, newsfeed: list[str]) -> bool:
         self.statistical_feature_extractor.load_resources()
-        model_path = 'resources/models/best_classifier_bootstrapped.pth'
+        model_path = 'resources/models/best_classifier_crossvalidation.pth'
         model_state_dict = torch.load(model_path, map_location=torch.device('cpu'))
         self.classifier.load_state_dict(model_state_dict)
         self.classifier.eval()
