@@ -141,10 +141,10 @@ class Anomaly_Seeker(Seeker):
         article_features = []
         for article in tqdm(newsfeed, desc='Extracting features', disable=self.disable_tqdm):
             article = str(article)
-            
+                
             # Standard Text Features
             tokens = self.base_model.tokenizer().encode(article)
-            
+                
             length = len(article)
             sentences = article.split('.')
             avg_sentence_length = np.mean([len(sentence.split()) for sentence in sentences])
@@ -155,11 +155,11 @@ class Anomaly_Seeker(Seeker):
             sentiment = sentiment_consistency(article)
             named_entities = named_entity_analysis(article)
             repetition = repetition_patterns(article)
-            
+                
             # Llama Features
             probs = get_probabilities(self.base_model, tokens, article)
             avg_token_probability = np.mean(probs)
-            
+                
             # Reflects the diversity or uncertainty of token predictions.
             # Tokens with low log-probability are less suspicious in high-entropy (uniform) distributions
             # High Entropy: Indicates uncertainty, many tokens are equally likely
@@ -168,7 +168,7 @@ class Anomaly_Seeker(Seeker):
             # 2 Assess the log-probability of the actual token at each position.
             # 3 Decision Metric: A low log-probability token in a low-entropy context indicates a potential anomaly
             entropy = get_entropy(probs)
-            
+                
             # Perplexity measures a model’s uncertainty in predicting the next token (Ranges: 1 to inf)
             # Lower values indicate a more predictable and effective model
             perplexity = get_perplexity(probs, tokens)
@@ -186,7 +186,7 @@ class Anomaly_Seeker(Seeker):
                                 avg_token_probability,
                                 perplexity
                                 ]
-            
+                
             article_features.append(article_features_entry)
 
         feature_set = pd.DataFrame(article_features, columns=[
@@ -206,9 +206,9 @@ class Anomaly_Seeker(Seeker):
         result_frame = pd.DataFrame(columns=['length_ks_statistic', 'length_ad_statistic', 'length_t_statistic', 'avg_sentence_length_ks_statistic', 'avg_sentence_length_ad_statistic', 'avg_sentence_length_t_statistic', 'type_token_ratio_ks_statistic', 'type_token_ratio_ad_statistic', 'type_token_ratio_t_statistic', 'flesch_score_ks_statistic', 'flesch_score_ad_statistic', 'flesch_score_t_statistic', 'vocab_richness_ks_statistic', 'vocab_richness_ad_statistic', 'vocab_richness_t_statistic', 'num_special_chars_ks_statistic', 'num_special_chars_ad_statistic', 'num_special_chars_t_statistic', 'entropy_ks_statistic', 'entropy_ad_statistic', 'entropy_t_statistic', 'sentiment_ks_statistic', 'sentiment_ad_statistic', 'sentiment_t_statistic', 'named_entities_ks_statistic', 'named_entities_ad_statistic', 'named_entities_t_statistic', 'repetition_ks_statistic', 'repetition_ad_statistic', 'repetition_t_statistic', 'avg_token_probability_ks_statistic', 'avg_token_probability_ad_statistic', 'avg_token_probability_t_statistic', 'perplexity_scaled_ks_statistic', 'perplexity_scaled_ad_statistic', 'perplexity_scaled_t_statistic'])
         
         for col in tqdm(feature_set.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
-            result_frame.at[0, f"{col}_ks_statistic"] = perplexity_ks_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame.at[0, f"{col}_ad_statistic"] = perplexity_ad_test(self.baseline_feature_set[col], feature_set[col])
-            result_frame.at[0, f"{col}_t_statistic"] = perplexity_t_test(feature_set[col])
+            result_frame.at[0, f"{col}_ks_statistic"] = ks_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame.at[0, f"{col}_ad_statistic"] = t_test(self.baseline_feature_set[col], feature_set[col])
+            result_frame.at[0, f"{col}_t_statistic"] = ad_test_normal_dist(feature_set[col])
         
         return result_frame
 
@@ -249,7 +249,44 @@ class Anomaly_Seeker(Seeker):
             print('feature-set saved')
         
         return feature_set
-       
+
+    def extract_features_and_labels_in_newsfeeds_test(self):
+        '''
+        Generate synthetic newsfeed dataset for training
+        '''
+        print('Start Feature Extraction...')
+        
+        def extract_features_of_articles_feature_set(self, article_features):
+        
+            result_frame = pd.DataFrame()
+            
+            for col in tqdm(article_features.columns, desc='Estimate statistics for features', disable=self.disable_tqdm):
+                result_frame.at[0, f"{col}_ks_statistic"] = ks_test(self.baseline_feature_set[col], article_features[col])
+                result_frame.at[0, f"{col}_t_statistic"] = t_test(self.baseline_feature_set[col], article_features[col])
+                result_frame.at[0, f"{col}_ad_statistic_two_sample"] = t_test(self.baseline_feature_set[col], article_features[col])
+                result_frame.at[0, f"{col}_ad_statistic"] = ad_test_normal_dist(article_features[col])
+
+            return result_frame     
+        
+        feature_set_articles = pd.read_csv('resources/feature_set_articles.csv')
+        feature_set = pd.DataFrame()
+        num_rows = feature_set_articles.shape[0]
+        chunk_size=30
+        num_chunks = (num_rows + chunk_size - 1) // chunk_size
+        for i in tqdm(range(num_chunks), desc='Process article features', disable=self.disable_tqdm):
+            start_row = i * chunk_size
+            end_row = start_row + chunk_size
+            chunk = feature_set_articles.iloc[start_row:end_row]
+            
+            new_features_frame = extract_features_of_articles_feature_set(chunk.drop(columns=['label']))
+            new_features_frame['label'] = -1 if any(chunk['label'] == -1) else 1
+            
+            feature_set = pd.concat([feature_set, new_features_frame], ignore_index=True)
+
+        feature_set.to_csv('resources/feature_set_newsfeeds_new_p_values.csv', index=False)
+        
+        return feature_set
+
     def gridSearch(self, features, labels):
         'Gridsearch with Cross Validation'
 
@@ -267,10 +304,14 @@ class Anomaly_Seeker(Seeker):
     def train_model(self, modelName='RFC', permutation_importance_flag=True, plotting_flag=True):
         print('Preparation...')
         try:
-            #feature_set = pd.read_csv('resources/feature_set_newsfeeds.csv')
-            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
+            feature_set = pd.read_csv('resources/feature_set_articles.csv')
         except FileNotFoundError:
-            feature_set = self.extract_features_and_labels_in_newsfeeds('resources/feeds/doctored_feeds_newsfeeds')
+            feature_set = self.extract_features_and_labels_in_articles('resources/feeds/doctored_feeds_articles')
+        
+        #cols_to_include = ['label', 'entropy_ad_statistic_two_sample', 'perplexity_scaled_ad_statistic_two_sample', 'num_special_chars_ad_statistic','avg_sentence_length_ad_statistic', 'flesch_score_ad_statistic']
+        cols_to_include = ['label', 'entropy', 'perplexity_scaled']
+        cols_to_exclude = [col for col in feature_set.columns if col not in cols_to_include]
+        feature_set = feature_set.drop(columns=cols_to_exclude)
         
         labels = feature_set.label
         feature_set = feature_set.drop(columns=['label'])
@@ -283,9 +324,9 @@ class Anomaly_Seeker(Seeker):
             y_pred = clf.predict(X_test)
             
         elif modelName == 'SVM':
-            clf_svm = SVC(random_state=420)
-            clf_svm.fit(X_train, y_train)
-            y_pred = clf_svm.predict(X_test)
+            clf = SVC(random_state=420)
+            clf.fit(X_train, y_train)
+            y_pred = clf.predict(X_test)
             
         elif (modelName == 'CoM'):
             print("Training Center of Mass model")
@@ -294,6 +335,7 @@ class Anomaly_Seeker(Seeker):
             distances = np.sqrt(np.sum((X_test - centroid)**2, axis=1))
             threshold = threshold_factor * np.std(distances)
             y_pred = distances > threshold
+            permutation_importance_flag = False
             
         elif modelName == 'CoN':
             print("Training Center of Neighborhood model")
@@ -307,6 +349,7 @@ class Anomaly_Seeker(Seeker):
             point_to_neighborhood_distances = np.linalg.norm(X_test - neighborhood_centroids, axis=1)
             threshold = threshold_factor * np.std(point_to_neighborhood_distances)
             y_pred = point_to_neighborhood_distances > threshold
+            permutation_importance_flag = False
         
         print('\n')
         print(f"Precision: {precision_score(y_test, y_pred)}")
@@ -326,16 +369,17 @@ class Anomaly_Seeker(Seeker):
             plt.xlabel('Mean decrease in accuracy')
             plt.ylabel('Feature')
             plt.title('Feature importance')
-            plt.savefig(f"permutation_importance_{modelName}_newsfeeds.png")
+            plt.savefig(f"permutation_importance_{modelName}.png")
         
         if plotting_flag:
             print('Plot Prediction')
             x_test_dataframe = pd.DataFrame(X_test)
             x_test_dataframe['prediction'] = y_pred
+            x_test_dataframe['actual'] = y_test
             x_test_dataframe = x_test_dataframe.reset_index(drop=True)
-            self.plot_predictions(x_test_dataframe, modelName)
+            self.plot_predictions_new(x_test_dataframe, modelName)
         
-        joblib.dump(clf, 'resources/models/anomaly_detector_newsfeeds.joblib')
+        joblib.dump(clf, f"resources/models/anomaly_detector_{modelName}.joblib")
     
     def detect_secret(self, newsfeed: list[str]) -> bool:
         return self.detect_secret_in_article(newsfeed)
@@ -371,13 +415,36 @@ class Anomaly_Seeker(Seeker):
         df_pca['prediction'] = predictions
         df_pca.plot.scatter(x='x', y='y', c='prediction', colormap='viridis')
         
-        plt.savefig(f"predictions_{modelname}_newsfeeds.png")
+        plt.savefig(f"predictions_{modelname}.png")
         
         outliers = df_pca[df_pca['prediction'] == -1]
         outlier_data = outliers[['x', 'y']]
         print(f"Number of Outliers: {len(outlier_data)}")
 
-        outlier_data.to_csv(f"outliers_{modelname}_newsfeeds.csv", index=False)
+        outlier_data.to_csv(f"outliers_{modelname}.csv", index=False)
+        
+    def plot_predictions_new(self, x_test_dataframe, modelName):
+        
+        principle_components = self.apply_PCA(x_test_dataframe.drop(columns=['prediction', 'actual']))
+        df_pca = pd.DataFrame(principle_components, columns=['x', 'y'])
+        df_pca['prediction'] = x_test_dataframe['prediction']
+        df_pca['actual'] = x_test_dataframe['actual']
+        df_pca['false_positive'] = (x_test_dataframe['prediction'] == 1) & (x_test_dataframe['actual'] == -1)
+        df_pca['false_negative'] = (x_test_dataframe['prediction'] == -1) & (x_test_dataframe['actual'] == 1)
+        
+        plt.figure(figsize=(10, 6))
+        
+        for index, row in df_pca.iterrows():
+            if row['false_positive'] or row['false_negative']:
+                color = 'red'  # False positives and negatives in red
+            else:
+                color = 'blue' # Correct predictions in blue
+            plt.scatter(row['y'], row['x'], color=color)
+
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'Prediction Plot for {modelName}')
+        plt.savefig(f"prediction_plot_{modelName}.png")
         
     def apply_PCA(self, df, n_components=2):
             pca = PCA(n_components=n_components)
