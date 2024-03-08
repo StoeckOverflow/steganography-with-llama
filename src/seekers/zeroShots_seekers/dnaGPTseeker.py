@@ -1,9 +1,10 @@
 import math
 from tqdm import tqdm
-from .seeker import Seeker
-from ..utils.llama_utils import get_probabilities
+from ..seeker import Seeker
+from ...utils.llama_utils import get_probabilities
 import re
 import numpy as np
+from typing import List
 
 class dnaGPTseeker(Seeker):
     
@@ -28,7 +29,7 @@ class dnaGPTseeker(Seeker):
     
         return y0.lower(), y0_sequences
 
-    def ngrams(self,sequence, n) -> [str]:
+    def ngrams(self,sequence, n) -> List[str]:
         """Generate n-grams from a sequence."""
         if not isinstance(sequence, (list, str)) or not isinstance(n, int) or n <= 0:
             #print(f"n: {n} \n sequence: {sequence}")
@@ -88,7 +89,7 @@ class dnaGPTseeker(Seeker):
 
         return score_sum / (K * min_length)
 
-    def calculate_scoring_for_newsfeed(self, texts, k=5, distance_method='n-gram') -> [bool]:
+    def calculate_scoring_for_newsfeed(self, texts, k=5, distance_method='n-gram') -> List[bool]:
         'Do scoring for all texts and return bool weather the text has stego or not'
         prediction_results = []
         for text in tqdm(texts, desc=f"Evaluate {distance_method} score for texts", disable=self.disable_tqdm):
