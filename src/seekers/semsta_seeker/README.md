@@ -1,4 +1,4 @@
-### DL-based Detector leveraging Semantic and Statistical Features
+## DL-based Detector leveraging Semantic and Statistical Features
 
 Prompted by these insights and the limitations observed in both zero-shot methods and traditional machine learning models, we embarked on developing a more sophisticated technique. We chose a deep learning-based approach, inspired by the work of Guo et al., which incorporates both semantic and statistical analysis.
 
@@ -12,7 +12,7 @@ Our system's architecture is composed of four main components:
 
 This approach enables a nuanced and deep understanding of the text, leveraging both language context and statistical significance to make informed decisions on the presence of steganographic messages.
 
-#### Semantic Feature Extraction with BERT
+### Semantic Feature Extraction with BERT
 
 In our quest to extract deep semantic features from text, we opted for BERT (more specifically *bert-base-uncased*) over Llama due to its accessibility via the Hugging Face transformers library, which offers numerous advantages. The Hugging Face platform's user-friendly interface significantly streamlines development by enabling quick loading and inference with BERT and other pre-trained models, offering rapid deployment across tasks without complex setup, a critical advantage in resource-constrained environments. In contrast, the Llama_cpp environment presented significant barriers to entry, including sparse documentation and a more limited feature set. The practical implications became evident when tokenizing text with Llama took approximately 15 minutes per news feed item, a delay that was unsustainable given our time constraints and added unwanted complexity to our operations.
 
@@ -22,7 +22,7 @@ BERT leverages the Transformer architecture, distinguished by multi-head attenti
 
 When BERT processes a sentence, it starts by encoding the sequence of words into a high-dimensional space with its embedding layer, which synthesizes token embeddings, segment embeddings, and position embeddings for each word. This is where its attention mechanisms shine, weighting the influence of words relative to one another, and allowing for nuanced understanding of context and long-range dependencies. As a result, BERT captures the full spectrum of semantic nuances, making it adept at understanding complex sentence structures and the relationships between distant words. Especially in the case of steganography this is very important as secrets don’t have to be densely encoded into the text. BERT’s final layer's output is transformed into an information space via a dense layer and activated with a sigmoid function. This produces a confidence score for the semantic features, indicating the model's certainty about the extracted semantic information. This is the form of latent representation we use as input for the fusion component and as input for the classifier.
 
-#### Statistical Feature Extraction with TF-IDF
+### Statistical Feature Extraction with TF-IDF
 
 Current linguistic steganography methods primarily utilize the LLMs with conditional probability coding. As this approach influences the statistical distribution of word probabilities within the text used for steganography, understanding the relevance of words in a document is crucial. To quantify this relevance, Guo et al. proposes to use the TF-IDF vectorizer (Term Frequency-Inverse Document Frequency). This measure consists of two parts: Term Frequency (TF) assesses the prevalence of a word within a single document, underpinning the notion that frequent terms are of greater significance to the document. The Inverse Document Frequency (IDF), on the other hand, gauges the rarity of a term across the entire collection of documents, or corpus, implying that common words
 
@@ -32,7 +32,7 @@ We leverage Auto-Encoders, a specialized neural network architecture composed of
 
 Integrating Auto-Encoders for encoding TF-IDF vectors achieves a dual purpose. Firstly, it simplifies the management of complex, high-dimensional data by encapsulating the most informative aspects into a denser, more abstract representation. Secondly, this condensed form is vital for detecting patterns indicative of steganography within text. Integrating TF-IDF with Auto-Encoders, we significantly enhance our architecture's ability to discern between regular and steganographically altered text. This synergy combines TF-IDF's emphasis on keyword significance with Auto-Encoders' efficient feature compression, providing a robust statistical input that improves our detection of hidden messages within text. By employing the encoder of the Auto Encoder for feature extraction on input statistical information, we compress the original input into a vector containing crucial, yet compact, information. The training of the Auto-Encoders allows us to obtain the latent representation, which serves as the statistical features of the input text. This method draws inspiration from the foundational work of Hinton and Salakhutdinov with neural networks, providing a sophisticated approach to capturing the global representation of statistics within a latent space.
 
-#### Fusion Component
+### Fusion Component
 
 In the realm of deep learning architectures for classification tasks, the accuracy of feature selection and integration is of utmost importance, which is why the fusion component merges Auto-Encoder-generated TF-IDF vectorized features with semantically rich features filtered through BERT inspired by the work of Guo et al. The fusion component aims to enhance the system's reliability by focusing on high-confidence, semantic information indicative of steganographic content. Statistical data, with its focus on quantifiable text attributes like TF-IDF scores and sentence lengths, excels at uncovering patterns or anomalies in distribution, while semantic data, enhanced by models like BERT, delves into text meaning, context, and linguistic relationships, capturing nuances beyond the reach of statistical analysis alone.
 
@@ -40,7 +40,7 @@ This approach is grounded in the identification of high-confidence features (tho
 
 The inception of this fusion component was influenced by the significant improvements reported in Zhang et al.'s paper, where FSA accuracy was notably enhanced across two datasets consisting of news headlines and micro-blogs, compared to baseline models. By adopting and adapting this sophisticated component from financial sentiment analysis to steganalysis, our model not only overcomes the limitations inherent in relying solely on semantic or statistical analysis but also markedly improves its ability to uncover covert embedded steganography in news feeds, visible through an improvement of the F1-Score by 0.02.
 
-#### Classifier
+### Classifier
 
 The classifier module has the crucial task of determining whether input text contains steganographic content. This module capitalizes on the power of the Bahdanau attention mechanism to refine the integration of representations from the original BERT-encoded text and the fused vector derived from the fusion component. The BERT-encoded text serves as the encoder's hidden state, and the fused features serve as the decoder's hidden state. Notably, the fusion information predominantly comprises semantic features when \(\alpha=0\), allowing the module to leverage self-attention for a refined analysis.
 
@@ -54,7 +54,7 @@ Leveraging the dynamic interplay of encoder and decoder states, our architecture
 
 Central to this enhanced capability is the strategic integration of BERT's contextually rich embeddings with the discriminative power of TF-IDF vectorization, paired with the focused attention facilitated by the Bahdanau mechanism. Together, they form a robust detection mechanism, adept at uncovering the intricate patterns of hidden information.
 
-#### Training
+### Training
 
 Optimization during the training phase was rigorously directed by the cross-entropy loss function, expressed as \(L = -\frac{1}{N} \sum_{i=1}^{N} \left[y \log \hat{y} + (1 - y) \log (1 - \hat{y})\right]\), where \(y\) symbolizes the text's true label, and \(\hat{y}\) its predicted label. Cross-entropy loss is chosen for model optimization due to its effectiveness in measuring the discrepancy between the model's predicted probabilities and the actual labels, penalizing incorrect predictions more severely when the model is confident. This attribute is vital in steganalysis to ensure precise and confident differentiation between steganographic and normal texts, enhancing the model's accuracy in identifying hidden information within texts.
 
