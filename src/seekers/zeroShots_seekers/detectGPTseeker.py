@@ -1,5 +1,5 @@
-from ..utils.llama_utils import get_ll, get_lls, compute_embeddings_llama
-from .seeker import Seeker
+from ...utils.llama_utils import get_ll, get_lls, compute_embeddings_llama
+from ..seeker import Seeker
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 import numpy as np
 import re
@@ -8,6 +8,7 @@ import torch
 import math
 import time
 from sklearn.metrics.pairwise import cosine_similarity
+from typing import List
 
 class detectGPTseeker(Seeker):
 
@@ -47,10 +48,10 @@ class detectGPTseeker(Seeker):
         text = ' '.join(tokens)
         return text
 
-    def count_masks(self, texts) -> [int]:
+    def count_masks(self, texts) -> List[int]:
         return [len([x for x in text.split() if x.startswith("<extra_id_")]) for text in texts]
 
-    def replace_masks(self, texts, mask_top_p=1.0) -> [str]:
+    def replace_masks(self, texts, mask_top_p=1.0) -> List[str]:
         n_expected = self.count_masks(texts)
         stop_id = self.mask_tokenizer.encode(f"<extra_id_{max(n_expected)}>")
         tokens = self.mask_tokenizer(texts, return_tensors="pt", padding=True).to(self.DEVICE)
@@ -58,7 +59,7 @@ class detectGPTseeker(Seeker):
         test =  self.mask_tokenizer.batch_decode(outputs, skip_special_tokens=False)
         return test
     
-    def replace_masks_llama_cpp(self, texts) -> [str]:
+    def replace_masks_llama_cpp(self, texts) -> List[str]:
         for i in range(len(texts)):
             text = texts[i]
             output_text = ""
@@ -75,7 +76,7 @@ class detectGPTseeker(Seeker):
 
         return texts
 
-    def apply_extracted_fills(self, masked_texts, extracted_fills) -> [str]:
+    def apply_extracted_fills(self, masked_texts, extracted_fills) -> List[str]:
         # split masked text into tokens, only splitting on spaces (not newlines)
         tokens = [x.split(' ') for x in masked_texts]
 
@@ -93,7 +94,7 @@ class detectGPTseeker(Seeker):
         texts = [" ".join(x) for x in tokens]
         return texts
 
-    def extract_fills(self, texts) -> [[str]]:
+    def extract_fills(self, texts) -> List[List[str]]:
         # remove <pad> from beginning of each text
         texts = [x.replace("<pad>", "").replace("</s>", "").strip() for x in texts]
 
@@ -105,7 +106,7 @@ class detectGPTseeker(Seeker):
 
         return extracted_fills
 
-    def perturb_texts_(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> [str]:
+    def perturb_texts_(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> List[str]:
         masked_texts = [self.tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
         raw_fills = self.replace_masks_llama_cpp(masked_texts)
         extracted_fills = self.extract_fills(raw_fills)
@@ -128,12 +129,12 @@ class detectGPTseeker(Seeker):
 
         return perturbed_texts
     
-    def perturb_texts_llama_cpp(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> [str]:
+    def perturb_texts_llama_cpp(self, texts, span_length=5, pct=0.3, ceil_pct=False) -> List[str]:
         masked_texts = [self.tokenize_and_mask(x, span_length, pct, ceil_pct) for x in texts]
         perturbed_texts = self.replace_masks_llama_cpp(masked_texts)
         return perturbed_texts
 
-    def perturb_texts(self, texts, chunk_size=20, ceil_pct=False) -> [str]:
+    def perturb_texts(self, texts, chunk_size=20, ceil_pct=False) -> List[str]:
         outputs = []
         for i in tqdm(range(0, len(texts), chunk_size), desc="Applying perturbations", disable=self.disable_tqdm):
             outputs.extend(self.perturb_texts_llama_cpp(texts[i:i + chunk_size], ceil_pct=ceil_pct))
@@ -159,7 +160,7 @@ class detectGPTseeker(Seeker):
 
         return prediction_score
 
-    def run_DetectGPT_feed(self, feed, n_perturbations=5) -> [float]:
+    def run_DetectGPT_feed(self, feed, n_perturbations=5) -> List[float]:
         torch.manual_seed(42)
         np.random.seed(42)
         feed = [text for text in feed if len(text.split()) > 49 ]
@@ -180,7 +181,7 @@ class detectGPTseeker(Seeker):
         
         return prediction_scores
 
-    def run_AuthentiGPT_feed(self, feed, n_pertubations=5) -> [float]:
+    def run_AuthentiGPT_feed(self, feed, n_pertubations=5) -> List[float]:
         feed = [text for text in feed if len(text.split()) > 49 ]
         if len(feed) < 15:
             return [694201337]
@@ -206,7 +207,7 @@ class detectGPTseeker(Seeker):
         print(f"Similarities: {similiarity_list}")
         return similiarity_list
         
-    def calculate_prediction_scores(self, training_feed, n_perturbations=5) -> [float]:
+    def calculate_prediction_scores(self, training_feed, n_perturbations=5) -> List[float]:
         start_time = time.time()
         torch.manual_seed(42)
         np.random.seed(42)
