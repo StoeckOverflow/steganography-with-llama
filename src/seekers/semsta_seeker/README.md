@@ -1,12 +1,8 @@
-Certainly! Here's the content you provided formatted in Markdown:
-
----
-
 ### DL-based Detector leveraging Semantic and Statistical Features
 
 Prompted by these insights and the limitations observed in both zero-shot methods and traditional machine learning models, we embarked on developing a more sophisticated technique. We chose a deep learning-based approach, inspired by the work of Guo et al., which incorporates both semantic and statistical analysis.
 
-![Overview of the DL-based Approach with semantic (Bert-encoded) and statistical (TF-IDF vectorized) Feature Extraction, inspired by Guo et al.](resources/figures/overviewDL-BasedApproach.png)
+![Overview of the DL-based Approach with semantic (Bert-encoded) and statistical (TF-IDF vectorized) Feature Extraction, inspired by Guo et al.](/resources/figures/overviewDL-BasedApproach.png)
 
 Our system's architecture is composed of four main components:
 
@@ -48,7 +44,7 @@ The inception of this fusion component was influenced by the significant improve
 
 The classifier module has the crucial task of determining whether input text contains steganographic content. This module capitalizes on the power of the Bahdanau attention mechanism to refine the integration of representations from the original BERT-encoded text and the fused vector derived from the fusion component. The BERT-encoded text serves as the encoder's hidden state, and the fused features serve as the decoder's hidden state. Notably, the fusion information predominantly comprises semantic features when \(\alpha=0\), allowing the module to leverage self-attention for a refined analysis.
 
-![Visualization of the Bahdanau Attention mechanism with *sl=sequence length*, influenced by Bahdanau et al., and Luong et al.](resources/figures/BahdanauAttention.png)
+![Visualization of the Bahdanau Attention mechanism with *sl=sequence length*, influenced by Bahdanau et al., and Luong et al.](/resources/figures/BahdanauAttention.png)
 
 The utilization of the Bahdanau attention mechanism is essential for overcoming the limitations faced by traditional
 
